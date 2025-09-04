@@ -1,0 +1,123 @@
+Project Structure
+=========================================================================================================
+fastran_project/
+│
+├── fastran_gui.py          # The main application script (formerly the large v2.3.4)
+├── parsers.py              # Handles reading/writing .fin and material files
+├── editors.py              # Contains all Toplevel editor windows (Spectrum, Block, Dkeff, etc.)
+├── widgets.py              # Contains reusable UI components (HelpWindow, ToolTip, etc.)
+├── config.py               # NEW: Holds all mapping dicts and default values (renamed from utils.py)
+├── utils.py                # NEW: Holds simple helper functions (safe_float, etc.)
+├── runners.py               # NEW: Manages running fastran.exe and dkeff.exe
+│
+├── fastran.exe             # The FASTRAN executable
+├── dkeff.exe               # The dkeff utility executable
+└── fastran_gui.cfg         # The configuration file for exe paths
+=========================================================================================================
+
+=========================================================================================================
+Version History:
+
+V1 = Uses an external library to generate a smooth GUI
+
+V2 = Simple, yet functional GUI that uses TKINTER (standard python library)
+=========================================================================================================
+	V2.2 = Adds tooltips for all variables, adds dropdown combo boxes for more variables, allows the user to run 	       FASTRAN from w/in the GUI, and allows the user to export the results as a .csv
+		V2.2.1 -- Adds the ability to visualize the crack-growth plot in real time
+		V2.2.2 -- Adds the ability to load basic material properties from a .lkpx (xml) file
+		V2.2.3 -- Provides general updates to the spectrum editor including: 
+    		* Ability to read in .spx and .sub files in addition to .txt files and
+    		   convert them into FASTRAN-accepted spectrum formatting
+            * Spectrum visualization
+            * Added the option to have a SMF value for normalized spectra
+            * Improved editing controls for the spectrum levels
+        V2.2.4 -- Provides improved conditioning for all NFOPT values and general updates
+                 to the Spectrum Editor
+            * Adds NFOPT = 0 and 1 conditional formatting and correct parsing logic
+            * Improves the spectrum editor by changing the replacing SMF/ICLIP with 
+              SPEAK according to the user-guide and per Kevin and Jim's emails 
+            * Adds conditional buttons to facilitate in generating/editing spectrum files
+            * Sets the default spectrum name to "cstamp" rather than "dummy"
+            * Adds the ability to normaize the spectrum and recognize the SPEAK value
+        V2.2.5
+            * Refactors the UI Update logic, reorganizing _update_all_states into 
+              specific sections to aid in clarity and future updates
+            * Adds real-time input validation via turning invalid inputs red
+            * Adds menus to the editor windows that include things like "Import...",
+              "Redo", "Undo"
+            * Provides a complete block loading editor for NFOPT = 1
+            * Provides post-processing tools
+        V2.2.6/7
+            * Adds the ability to load previosuly made output files to create 
+              post-processing plots
+            * Improves the ability to create input files for NFOPT = 0 or 1
+                - Improves NFOPT = 0 logic
+            * Addresses bug that prevents the FASTRAN log from populating
+            * Replaces the log screen with a progress bar to NPRT >= 1 and 
+              NIPT >= 1 conditions
+=========================================================================================================
+    V2.3 = Implements organic dkeff analysis using dkeff13.exe
+        V2.3.1
+            * Adds a Material Data Generator using dkeff
+            * Adds the ability to load and read lkpx material files
+            * Adds the ability to load and read dkeff input files
+            * (needs work) Adds the ability to save input files and run dkeff13.exe
+            * Adds the ability to parse dkeff13 data into the main window
+            * Adds a da/dN dKeff plot to Section 7
+            * Updates the parsing logic of the spectrum browser
+        V2.3.2 
+            * Restructures the dkeff material creator to use batch conversion
+                - User can create a batch conversion for the .lkpx file which includes
+                  all R-values
+                - The user can then upload the dkeff file in the material generator
+                  + The user must select 1 R-value to use to put into the main window
+             * Makes sure the proper units are being imported to the main window from
+               the material generator (LINUT) selection
+             * Adds data validation for creating the dkeff curves within Section 7
+             * Adapts file types to increase clarity
+        V2.3.3 
+            * Adds clarification on Section 6 variables
+            * Updates output files to match the input file nomenclature by default
+            * The material name matches the dkin file name by default
+            * Solved issue preventing dkeff generation for models other than
+              middle-crack
+            * Added classification filters to NTYP in Section 10
+        V2.3.4
+            * Makes indpendent modules for:
+                - Main
+                - Parsers
+                - Editors
+                - Widgets
+                - Utils
+                - Runners
+                - Plot
+                - Config
+            * Creates a restructured file organization using a project folder with
+              sub-folders for all generated file types
+ 
+ 
+=========================================================================================================           
+Consolidated Roadmap
+=========================================================================================================
+### ⚡ Optimization / Code Quality
+Validation Layer: Create a dedicated validation function (e.g., in utils.py or a new validator.py) that checks all GUI inputs before a run. It would verify that CI < CF, all required numeric fields are valid, etc., and present a clear list of errors to the user if any are found.
+
+Centralized Logging: Implement Python's built-in logging module. Configure it to write all events (info, warnings, errors) to the output/log.txt file within the project. This is invaluable for debugging user issues.
+
+### 🆕 New Features
+Parameter Study / Batch Processing: Create a new "Parameter Study" editor window. This would allow a user to select a parameter (like CI), define a range (e.g., from 0.1 to 0.5 in steps of 0.1), and have the application automatically run an analysis for each value, saving each result in a uniquely named subfolder in the output/ directory.
+
+Material Library / Database: Enhance the application to manage a library of materials. Users could save the properties from "Tab 1" as a named material (e.g., "7075-T6"). A new materials/ folder in the project could store these as simple .json files, which could then be selected from a dropdown menu.
+
+Project Templates: Create a templates/ folder with pre-filled .frproj folders for common analysis types (e.g., "Compact Tension Specimen," "Center Crack Panel"). Add a File > New From Template... menu option to let users create new projects based on these.
+
+### 🎨 User Interface (UX) Improvements
+Interactive Plotting: In the PostProcessingWindow, add the ability to load and overlay multiple result sets on the same plot for easy comparison. Add tooltips that show the exact X/Y values when a user hovers over a data point on the graph.
+
+Context-Sensitive Help: Add small (?) icons next to key input fields (like NTYP, NALP, NFOPT). When clicked, they would open the Help Window directly to the relevant section.
+
+Auto-Save & Recovery: As a more advanced feature, have the application periodically save the state of the GUI to a temporary file. If the app closes unexpectedly, it can offer to restore the unsaved session on the next launch.      
+             
+            
+            
+            

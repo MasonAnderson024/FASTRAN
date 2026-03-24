@@ -1,135 +1,85 @@
 # plots.py
 """
 plots.py
-----------
-Handles all Matplotlib plotting for the FASTRAN GUI.
-Each function takes a Matplotlib Axes object and data, and is responsible
-for drawing a specific type of plot onto that Axes.
+--------
+Visualization Logic for FASTRAN GUI.
+
+Responsibilities:
+1. Crack Growth Plotting: Visualizes the Paris Law equation (C1, C2...) in real-time.
+2. Styling: Manages the log-log scales and axis labels for engineering accuracy.
+3. Safety: Handles math errors (e.g., log of zero) gracefully to prevent GUI crashes.
 """
+
 from matplotlib.axes import Axes
-from typing import List
-import utils # For safe conversions
+from matplotlib.ticker import LogLocator
+import numpy as np
+import utils
 
-def plot_growth_rate(ax: Axes, table_data: List[List[str]]):
+def setup_growth_plot(ax: Axes):
     """
-    Generates the da/dN vs. dK_eff log-log plot for the Crack Growth tab.
-
-    Args:
-        ax (Axes): The Matplotlib Axes object to draw on.
-        table_data (List[List[str]]): The data from the crack growth table.
+    Initializes the Paris Law plot with correct log scales and engineering labels.
+    Called once during GUI setup.
     """
-    dkeff_data = []
-    rate_data = []
-
-    for row in table_data:
-        dkeff_val = utils.safe_float(row[0])
-        rate_val = utils.safe_float(row[1])
-        if dkeff_val > 0 and rate_val > 0:
-            dkeff_data.append(dkeff_val)
-            rate_data.append(rate_val)
-
     ax.clear()
-    if dkeff_data and rate_data:
-        ax.plot(dkeff_data, rate_data, marker='o', linestyle='-', markersize=4)
-
     ax.set_xscale('log')
     ax.set_yscale('log')
-    ax.set_xlabel("ΔK_eff")
-    ax.set_ylabel("da/dN")
-    ax.grid(True, which="both", ls="--", linewidth=0.5)
+    ax.set_xlabel(r'$\Delta K_{eff}$ (MPa$\sqrt{m}$)')
+    ax.set_ylabel(r'$da/dN$ (m/cycle)')
+    ax.set_title("Crack Growth Rate Preview")
+    ax.grid(True, which="both", linestyle='--', linewidth=0.5, alpha=0.7)
 
-def plot_real_time_growth(ax: Axes, x_data: List[float], y_data: List[float]):
+def plot_paris_law(ax: Axes, c1, c2, c3, c4, label="Growth Rate"):
     """
-    Generates the real-time Crack Length vs. Cycles plot during a FASTRAN run.
-
-    Args:
-        ax (Axes): The Matplotlib Axes object to draw on.
-        x_data (List[float]): The data for the x-axis (Cycles).
-        y_data (List[float]): The data for the y-axis (Crack Length).
-    """
-    ax.clear()
-    if x_data and y_data:
-        ax.plot(x_data, y_data, marker='.', markersize=3, linestyle='-')
+    Plots the Paris Law curve based on the constants provided.
+    Equation Approximation: da/dN = C1 * (dK)^C2
     
-    last_cycle = x_data[-1] if x_data else 0
-    last_crack = y_data[-1] if y_data else 0
-    
-    ax.set_title(f"FASTRAN Running... Cycle: {last_cycle:.0f}, Crack Length: {last_crack:.4f}")
-    ax.set_xlabel("Cycles")
-    ax.set_ylabel("Crack Length")
-    ax.grid(True)
-
-def plot_spectrum(ax: Axes, levels_data: List[List[str]], speak_value: float):
-    """
-    Generates the stress spectrum visualization plot for the SpectrumCreatorWindow.
-
     Args:
-        ax (Axes): The Matplotlib Axes object to draw on.
-        levels_data (List[List[str]]): The stress levels [smax, smin, cycles].
-        speak_value (float): The SPEAK multiplier to apply to stress values.
+        ax (Axes): The matplotlib axes to draw on.
+        c1 (str/float): The coefficient (intercept).
+        c2 (str/float): The exponent (slope).
+        c3, c4: Additional constants (reserved for future multi-slope logic).
     """
-    plot_x = [0]
-    plot_y = [0]
-    cumulative_cycles = 0
-
-    for level in levels_data:
-        smax = utils.safe_float(level[0]) * speak_value
-        smin = utils.safe_float(level[1]) * speak_value
-        cycles = utils.safe_int(level[2])
-        
-        for _ in range(cycles):
-            plot_x.extend([cumulative_cycles, cumulative_cycles + 0.5, cumulative_cycles + 1])
-            plot_y.extend([smin, smax, smin])
-            cumulative_cycles += 1
-            if cumulative_cycles > 200: # Limit plot to first 200 cycles for performance
-                break
-        if cumulative_cycles > 200:
-            break
-
-    ax.clear()
-    ax.plot(plot_x, plot_y, marker='o', markersize=2, linestyle='-')
-    ax.set_title("Spectrum Visualization (First 200 Cycles)")
-    ax.set_xlabel("Cumulative Cycles")
-    ax.set_ylabel("Stress")
-    ax.grid(True)
-
-def plot_post_processing(ax: Axes, header: List[str], data: List[List[str]], x_var: str, y_var: str, log_x: bool, log_y: bool):
-    """
-    Generates the user-defined plot in the PostProcessingWindow.
-
-    Args:
-        ax (Axes): The Matplotlib Axes object to draw on.
-        header (List[str]): The list of column headers.
-        data (List[List[str]]): The tabular result data.
-        x_var (str): The name of the variable for the x-axis.
-        y_var (str): The name of the variable for the y-axis.
-        log_x (bool): Whether to use a log scale for the x-axis.
-        log_y (bool): Whether to use a log scale for the y-axis.
-    """
-    if not x_var or not y_var: return
-
     try:
-        x_index = header.index(x_var)
-        y_index = header.index(y_var)
-        
-        x_data = [utils.safe_float(row[x_index]) for row in data]
-        y_data = [utils.safe_float(row[y_index]) for row in data]
+        # 1. Safe Conversion
+        # Use utils to handle potentially empty strings from the GUI
+        val_c1 = utils.safe_float(c1)
+        val_c2 = utils.safe_float(c2)
 
+        # 2. Validation
+        # If C1 is zero, the log-log plot will crash or show nothing.
+        # We only plot if we have valid physics parameters.
+        if val_c1 <= 0 or val_c2 == 0:
+            setup_growth_plot(ax) # Reset to blank grid
+            return
+
+        # 3. Generate Data Points
+        # Create a range of Delta-K values typical for metals (1 to 100 MPa-sqrt(m))
+        # Logspace generates points evenly spaced on a log scale
+        dk = np.logspace(0, 2.2, 50) # Range: 1.0 to ~158.0
+        
+        # 4. Calculate Growth Rate
+        # Simple Paris Law: da/dN = C1 * (dK)^C2
+        # (Note: This is a preview. The full FASTRAN solver handles thresholds 
+        # and fracture toughness clipping, but this visualizes the user's inputs).
+        dadn = val_c1 * (dk ** val_c2)
+
+        # 5. Plotting
         ax.clear()
+        ax.plot(dk, dadn, '-', color='blue', linewidth=2, label=f"C1={val_c1:.1e}, C2={val_c2}")
         
-        # Use scatter for rate-based plots, line for history-based plots
-        plot_style = {'marker': '.', 'linestyle': ''} if 'DKEC' in x_var or 'DKEA' in x_var else {'marker': '.', 'markersize': 4, 'linestyle': '-'}
+        # 6. Re-Apply Styling
+        # (Matplotlib's clear() resets styling, so we must re-apply)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel(r'$\Delta K_{eff}$ (MPa$\sqrt{m}$)')
+        ax.set_ylabel(r'$da/dN$ (m/cycle)')
+        ax.set_title("Crack Growth Rate Preview")
+        ax.grid(True, which="both", linestyle='--', linewidth=0.5, alpha=0.7)
         
-        ax.plot(x_data, y_data, **plot_style)
+        # Add a reference legend
+        ax.legend(loc='lower right', fontsize='small')
         
-        ax.set_xlabel(x_var)
-        ax.set_ylabel(y_var)
-        ax.set_title(f"{y_var} vs. {x_var}")
-        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-        
-        ax.set_xscale('log' if log_x else 'linear')
-        ax.set_yscale('log' if log_y else 'linear')
-        
-    except (ValueError, IndexError) as e:
-        # Error handling should be done in the calling UI
-        raise e
+    except Exception as e:
+        print(f"Plotting Logic Error: {e}")
+        # In case of error, just clear the plot so it doesn't show stale data
+        ax.clear()

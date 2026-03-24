@@ -2,152 +2,144 @@
 """
 project.py
 ----------
-ProjectManager for handling FASTRAN .frproj projects.
-
-Each project is a folder with extension .frproj, containing:
-- input/   (FASTRAN input files, all .txt)
-- output/  (FASTRAN output files, all .txt)
-- config/  (metadata.json, settings.json)
-- plots/   (optional user-generated figures)
+ProjectManager for the FASTRAN GUI.
+Handles the creation, loading, and file management of the .frproj structure.
+CRITICAL: Enforces security sandboxing via security.py to prevent path traversal.
 """
 
 import os
 import json
+import shutil
 from datetime import datetime
 
+# [SEC] Import Security Module for PathGuard and AuditLogger
+import security 
 
 class ProjectManager:
     def __init__(self, project_path=None):
         self.project_path = project_path
         self.metadata = {}
-        self.settings = {}
+        
+        # Define the standard folder structure
+        self.subfolders = {
+            "input": "input",
+            "output": "output",
+            "config": "config",
+            "plots": "plots"
+        }
+
         if project_path and os.path.isdir(project_path):
             self.load_project(project_path)
 
-    # ------------------------------
-    # Project Creation
-    # ------------------------------
-    def create_project(self, path, name="New Project", fastran_version="5.4"):
-        """
-        Create a new .frproj project at given path.
-        """
+    # ------------------------------------------------------------------
+    # LIFECYCLE MANAGEMENT
+    # ------------------------------------------------------------------
+    def create_project(self, path, name="New Project"):
+        """Creates a new structured project folder."""
+        # Enforce extension
         if not path.endswith(".frproj"):
             path += ".frproj"
+            
+        self.project_path = path
+        
+        # Create directories safely
         os.makedirs(path, exist_ok=True)
+        for folder in self.subfolders.values():
+            os.makedirs(os.path.join(path, folder), exist_ok=True)
 
-        # Subfolders
-        for sub in ["input", "output", "config", "plots"]:
-            os.makedirs(os.path.join(path, sub), exist_ok=True)
-
-        # Metadata
-        now = datetime.now().isoformat()
+        # Initialize Metadata
         self.metadata = {
-            "project_name": name,
-            "created": now,
-            "last_modified": now,
-            "fastran_version": fastran_version,
-            "schema_version": 1,
-            "files": {
-                "input": "input/case.txt",
-                "driver": "input/driver.txt",
-                "material": "input/material.txt",
-                "results": "output/results.txt",
-                "driver_out": "output/driver_out.txt",
-                "errors": "output/errors.txt",
-                "log": "output/log.txt"
-            }
+            "name": name,
+            "created": datetime.now().isoformat(),
+            "version": "3.0", # Schema version
+            "files": self.subfolders
         }
-        self.settings = {}  # empty GUI state initially
+        self._save_metadata()
+        
+        # [SEC] Log Creation
+        try:
+            logger = self.get_audit_logger()
+            logger.log_event("PROJECT_CREATED", f"Name: {name}")
+        except: pass
 
-        # Save config files
-        self._save_json(os.path.join(path, "config", "metadata.json"), self.metadata)
-        self._save_json(os.path.join(path, "config", "settings.json"), self.settings)
-
-        self.project_path = path
-        return path
-
-    # ------------------------------
-    # Project Loading
-    # ------------------------------
     def load_project(self, path):
-        """
-        Load existing .frproj project.
-        """
-        if not os.path.isdir(path):
-            raise FileNotFoundError(f"Project folder not found: {path}")
-
-        meta_file = os.path.join(path, "config", "metadata.json")
-        settings_file = os.path.join(path, "config", "settings.json")
-
-        if os.path.exists(meta_file):
-            self.metadata = self._load_json(meta_file)
-        else:
-            raise FileNotFoundError("Missing metadata.json in project.")
-
-        if os.path.exists(settings_file):
-            self.settings = self._load_json(settings_file)
-        else:
-            self.settings = {}
-
+        """Loads an existing project."""
         self.project_path = path
-        return self.metadata, self.settings
+        meta_path = os.path.join(path, "config", "metadata.json")
+        
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    self.metadata = json.load(f)
+            except Exception as e:
+                print(f"Metadata Load Error: {e}")
+                self.metadata = {"name": os.path.basename(path)}
+        else:
+            self.metadata = {"name": os.path.basename(path)}
+            
+        # [SEC] Log Access
+        try:
+            logger = self.get_audit_logger()
+            logger.log_event("PROJECT_LOADED", f"Path: {path}")
+        except: pass
 
-    # ------------------------------
-    # Saving Project State
-    # ------------------------------
-    def save_project(self, settings=None):
+    # ------------------------------------------------------------------
+    # SECURE FILE ACCESS (The Sandbox)
+    # ------------------------------------------------------------------
+    def get_path(self, folder_key):
         """
-        Save current metadata & settings back into project.
+        Returns the absolute path to a project subfolder (e.g., 'input').
+        [SEC] Uses PathGuard to strictly enforce that the path is inside the project.
         """
         if not self.project_path:
-            raise RuntimeError("No project loaded to save.")
+            raise ValueError("No project loaded.")
+            
+        rel_path = self.subfolders.get(folder_key, "")
+        full_path = os.path.join(self.project_path, rel_path)
+        
+        # Validate Path is inside Sandbox
+        return security.PathGuard.validate_path(self.project_path, full_path)
 
-        if settings is not None:
-            self.settings = settings
+    def get_relative_path(self, absolute_path):
+        """Converts an absolute path to one relative to the project root."""
+        if not self.project_path: return absolute_path
+        return os.path.relpath(absolute_path, self.project_path)
 
-        # Update timestamps
-        self.metadata["last_modified"] = datetime.now().isoformat()
+    def get_audit_logger(self):
+        """Returns the secure logger instance for this project."""
+        if not self.project_path: return None
+        
+        # Log file lives in /config/audit_trail.log
+        log_path = os.path.join(self.project_path, "config", "audit_trail.log")
+        return security.AuditLogger(log_path)
 
-        self._save_json(os.path.join(self.project_path, "config", "metadata.json"), self.metadata)
-        self._save_json(os.path.join(self.project_path, "config", "settings.json"), self.settings)
+    def clean_output(self):
+        """Deletes old results to ensure data freshness."""
+        out_dir = self.get_path("output")
+        for f in os.listdir(out_dir):
+            if f.endswith(".fou") or f.endswith(".out") or f.endswith(".txt"):
+                try:
+                    os.remove(os.path.join(out_dir, f))
+                except OSError: pass
 
-    # ------------------------------
-    # File Access Helpers
-    # ------------------------------
-    def get_path(self, key):
+    # ------------------------------------------------------------------
+    # HELPERS
+    # ------------------------------------------------------------------
+    def _save_metadata(self):
+        meta_path = os.path.join(self.project_path, "config", "metadata.json")
+        with open(meta_path, 'w') as f:
+            json.dump(self.metadata, f, indent=4)
+            
+    def write_text_file(self, subfolder, filename, content):
         """
-        Get absolute path to a known project file (e.g., "input", "results").
+        Securely writes a text file to a subfolder.
         """
-        rel = self.metadata["files"].get(key)
-        if not rel:
-            raise KeyError(f"File key '{key}' not found in metadata.")
-        return os.path.join(self.project_path, rel)
-
-    def write_file(self, key, content):
-        """
-        Write text content to a project file by key.
-        """
-        fpath = self.get_path(key)
-        with open(fpath, "w") as f:
+        dir_path = self.get_path(subfolder)
+        full_path = os.path.join(dir_path, filename)
+        
+        # Double check security before write
+        security.PathGuard.validate_path(self.project_path, full_path)
+        
+        with open(full_path, 'w') as f:
             f.write(content)
-
-    def read_file(self, key):
-        """
-        Read text content from a project file by key.
-        """
-        fpath = self.get_path(key)
-        if not os.path.exists(fpath):
-            return ""
-        with open(fpath, "r") as f:
-            return f.read()
-
-    # ------------------------------
-    # Internal JSON helpers
-    # ------------------------------
-    def _save_json(self, path, data):
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
-
-    def _load_json(self, path):
-        with open(path, "r") as f:
-            return json.load(f)
+        return full_path

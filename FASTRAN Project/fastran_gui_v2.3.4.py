@@ -37,6 +37,7 @@ import importers        # Legacy File Support
 import exporters        # CSV Export Logic
 import postprocessor    # Multi-run Comparison Window
 import editors          # Toplevel Editor Windows (Spectrum, Block, DkEff)
+import dialogs          # Help / Progress Toplevel Windows
 
 class FastranGui(tk.Tk):
     def __init__(self):
@@ -49,6 +50,7 @@ class FastranGui(tk.Tk):
         self.log_queue = queue.Queue()
         self.fastran_exe_path = None
         self.dkeff_exe_path = None
+        self.help_window = None
         
         # --- Configuration ---
         self._load_external_config()
@@ -517,6 +519,11 @@ class FastranGui(tk.Tk):
         self.results_menu.add_command(label="Open Output Folder", command=self._open_output_folder)
         self.results_menu.entryconfig("Export to CSV...", state="disabled")
 
+        # Help Menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Help...", command=self._show_help)
+
     # ------------------------------------------------------------------
     # PROJECT MANAGEMENT
     # ------------------------------------------------------------------
@@ -759,6 +766,13 @@ class FastranGui(tk.Tk):
 
     def _launch_dkeff(self):
         editors.DkeffWindow(self)
+
+    def _show_help(self):
+        if self.help_window is None or not self.help_window.winfo_exists():
+            self.help_window = dialogs.HelpWindow(self)
+        else:
+            self.help_window.lift()
+            self.help_window.focus_set()
 
     def _open_output_folder(self):
         if self.project.project_path:

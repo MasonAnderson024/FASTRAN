@@ -179,14 +179,19 @@ class FastranGui(tk.Tk):
         cb.pack(fill='x', pady=5)
         cb.bind("<<ComboboxSelected>>", self._on_ntyp_change)
         
-        # Standard Dimensions
+        # Standard Dimensions (Section 11: W T CI AI CN AN HN RAD RADF)
         grp = ttk.LabelFrame(left, text="Dimensions (Length Units)", padding=10)
         grp.pack(fill='x', pady=10)
-        self._add_entry(grp, "Width (W):", 'W', 0, 0)
-        self._add_entry(grp, "Thickness (B):", 'B', 0, 1)
-        self._add_entry(grp, "Init. Crack (Ci):", 'CI', 1, 0)
-        self._add_entry(grp, "Notch/Hole (an/cn):", 'CN', 1, 1)
-        self._add_entry(grp, "Final Crack (Cf):", 'CF', 2, 0)
+        self._add_entry(grp, "Width (W):",         'W',    0, 0)
+        self._add_entry(grp, "Thickness (B/T):",   'B',    0, 1)
+        self._add_entry(grp, "Init. Crack (Ci):",  'CI',   1, 0)
+        self._add_entry(grp, "Init. Depth (Ai):",  'AI',   1, 1)
+        self._add_entry(grp, "Notch (Cn):",        'CN',   2, 0)
+        self._add_entry(grp, "Notch Depth (An):",  'AN',   2, 1)
+        self._add_entry(grp, "Notch Half-Ht (Hn):",'HN',   3, 0)
+        self._add_entry(grp, "Hole Radius (RAD):", 'RAD',  3, 1)
+        self._add_entry(grp, "Fastener (RADF):",   'RADF', 4, 0)
+        self._add_entry(grp, "Final Crack (Cf):",  'CF',   4, 1)
 
         # Dynamic Special Inputs (Section 14)
         self.special_frame = ttk.LabelFrame(left, text="Special Requirements", padding=10)
@@ -278,6 +283,23 @@ class FastranGui(tk.Tk):
         ttk.Button(self.block_frame, text="Edit Block Loading...", command=self._launch_block_editor).pack(side='left', padx=5)
         ttk.Label(self.block_frame, text="(Define variable-amplitude block sequence)").pack(side='left', padx=10)
 
+        # Section 10: Specimen / loading options
+        sec10 = ttk.LabelFrame(f, text="Specimen & Loading Options (Section 10)", padding=10)
+        sec10.grid(row=4, column=0, columnspan=2, sticky='ew', pady=5)
+        self._add_entry(sec10, "LTYP:",   'LTYP',   0, 0)
+        self._add_entry(sec10, "LFAST:",  'LFAST',  0, 1)
+        self._add_entry(sec10, "NS:",     'NS',     1, 0)
+        self._add_entry(sec10, "KCONST:", 'KCONST', 1, 1)
+        self._add_entry(sec10, "NTCMAX:", 'NTCMAX', 2, 0)
+
+        # Section 16: Proof test / constant So
+        sec16 = ttk.LabelFrame(f, text="Proof Test / Constant So (Section 16)", padding=10)
+        sec16.grid(row=5, column=0, columnspan=2, sticky='ew', pady=5)
+        self._add_entry(sec16, "NRC:",     'NRC',     0, 0)
+        self._add_entry(sec16, "DVALUE:",  'DVALUE',  0, 1)
+        self._add_entry(sec16, "NCYCLE1:", 'NCYCLE1', 1, 0)
+        self._add_entry(sec16, "NCYCLE2:", 'NCYCLE2', 1, 1)
+
         # Apply initial visibility
         self._on_nfopt_change()
 
@@ -329,6 +351,15 @@ class FastranGui(tk.Tk):
         cb.pack(side='left', padx=5)
         cb.bind("<<ComboboxSelected>>", self._on_irate_change)
         widgets.ToolTip(cb, "1=Single Law\n4=Small/Large Transition")
+
+        # Section 9: Output Options
+        sec9 = ttk.LabelFrame(left, text="Output Options (Section 9)", padding=10)
+        sec9.pack(fill='x', pady=8)
+        self._add_entry(sec9, "NIPT:",  'NIPT',  0, 0)
+        self._add_entry(sec9, "NPRT:",  'NPRT',  0, 1)
+        self._add_entry(sec9, "LSTEP:", 'LSTEP', 1, 0)
+        self._add_entry(sec9, "NDKE:",  'NDKE',  1, 1)
+        self._add_entry(sec9, "DCPR:",  'DCPR',  2, 0)
 
         # Constants Container (Dynamic — rebuilt by _on_irate_change)
         self.constants_frame = ttk.Frame(left)
@@ -733,9 +764,14 @@ class FastranGui(tk.Tk):
         if self.project.project_path:
             os.startfile(self.project.get_path("output"))
 
-    def _add_entry(self, parent, label, var, r, c):
+    def _add_entry(self, parent, label, var, r, c, tooltip=None):
         ttk.Label(parent, text=label).grid(row=r, column=c*2, sticky='e', padx=5, pady=5)
-        ttk.Entry(parent, textvariable=self.vars[var], width=12).grid(row=r, column=c*2+1, sticky='w', padx=5)
+        e = ttk.Entry(parent, textvariable=self.vars[var], width=12)
+        e.grid(row=r, column=c*2+1, sticky='w', padx=5)
+        tip = tooltip if tooltip is not None else config.TOOLTIPS.get(var)
+        if tip:
+            widgets.ToolTip(e, tip)
+        return e
 
 
 if __name__ == "__main__":

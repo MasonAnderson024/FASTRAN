@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local config (contains machine-specific EXE paths)
+fastran_gui.cfg
+FASTRAN Project/fastran_gui.cfg
+
+# FASTRAN output files
+*.fou
+*.out
+
+# Project data (generated at runtime)
+projects/
+
+# OS
+.DS_Store
+Thumbs.db

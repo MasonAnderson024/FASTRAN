@@ -2,24 +2,17 @@
 """
 plots.py
 --------
-Visualization Logic for FASTRAN GUI.
-
-Responsibilities:
-1. Crack Growth Plotting: Visualizes the Paris Law equation (C1, C2...) in real-time.
-2. Styling: Manages the log-log scales and axis labels for engineering accuracy.
-3. Safety: Handles math errors (e.g., log of zero) gracefully to prevent GUI crashes.
+All Matplotlib visualization logic for the FASTRAN GUI.
+Handles Paris Law preview, spectrum bar charts, and post-processing plots.
 """
 
 from matplotlib.axes import Axes
-from matplotlib.ticker import LogLocator
 import numpy as np
 import utils
 
+
 def setup_growth_plot(ax: Axes):
-    """
-    Initializes the Paris Law plot with correct log scales and engineering labels.
-    Called once during GUI setup.
-    """
+    """Initializes the Paris Law plot with correct log scales."""
     ax.clear()
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -28,58 +21,182 @@ def setup_growth_plot(ax: Axes):
     ax.set_title("Crack Growth Rate Preview")
     ax.grid(True, which="both", linestyle='--', linewidth=0.5, alpha=0.7)
 
-def plot_paris_law(ax: Axes, c1, c2, c3, c4, label="Growth Rate"):
+
+def plot_paris_law(ax: Axes, c1, c2, c3=0, c4=0, label="Growth Rate"):
     """
-    Plots the Paris Law curve based on the constants provided.
-    Equation Approximation: da/dN = C1 * (dK)^C2
-    
-    Args:
-        ax (Axes): The matplotlib axes to draw on.
-        c1 (str/float): The coefficient (intercept).
-        c2 (str/float): The exponent (slope).
-        c3, c4: Additional constants (reserved for future multi-slope logic).
+    Plots the Paris Law curve: da/dN = C1 * dK^C2.
+    C3/C4 are accepted for future threshold extension but not yet applied in preview.
     """
     try:
-        # 1. Safe Conversion
-        # Use utils to handle potentially empty strings from the GUI
         val_c1 = utils.safe_float(c1)
         val_c2 = utils.safe_float(c2)
 
-        # 2. Validation
-        # If C1 is zero, the log-log plot will crash or show nothing.
-        # We only plot if we have valid physics parameters.
         if val_c1 <= 0 or val_c2 == 0:
-            setup_growth_plot(ax) # Reset to blank grid
+            setup_growth_plot(ax)
             return
 
-        # 3. Generate Data Points
-        # Create a range of Delta-K values typical for metals (1 to 100 MPa-sqrt(m))
-        # Logspace generates points evenly spaced on a log scale
-        dk = np.logspace(0, 2.2, 50) # Range: 1.0 to ~158.0
-        
-        # 4. Calculate Growth Rate
-        # Simple Paris Law: da/dN = C1 * (dK)^C2
-        # (Note: This is a preview. The full FASTRAN solver handles thresholds 
-        # and fracture toughness clipping, but this visualizes the user's inputs).
+        dk = np.logspace(0, 2.2, 60)
         dadn = val_c1 * (dk ** val_c2)
 
-        # 5. Plotting
         ax.clear()
-        ax.plot(dk, dadn, '-', color='blue', linewidth=2, label=f"C1={val_c1:.1e}, C2={val_c2}")
-        
-        # 6. Re-Apply Styling
-        # (Matplotlib's clear() resets styling, so we must re-apply)
+        ax.plot(dk, dadn, '-', color='royalblue', linewidth=2,
+                label=f"C1={val_c1:.2e}, C2={val_c2:.2f}")
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.set_xlabel(r'$\Delta K_{eff}$ (MPa$\sqrt{m}$)')
         ax.set_ylabel(r'$da/dN$ (m/cycle)')
         ax.set_title("Crack Growth Rate Preview")
         ax.grid(True, which="both", linestyle='--', linewidth=0.5, alpha=0.7)
-        
-        # Add a reference legend
         ax.legend(loc='lower right', fontsize='small')
-        
+
     except Exception as e:
-        print(f"Plotting Logic Error: {e}")
-        # In case of error, just clear the plot so it doesn't show stale data
+        print(f"Paris Law plot error: {e}")
+        ax.clear()
+
+
+def plot_tabular_growth(ax: Axes, table_data):
+    """
+    Plots crack growth from a dKeff table (list of [dK, da/dN] pairs).
+    Used when NTAB > 0 (tabular input from dkeff).
+    """
+    try:
+        if not table_data or len(table_data) < 2:
+            setup_growth_plot(ax)
+            return
+
+        dk_vals = [utils.safe_float(row[0]) for row in table_data]
+        dadn_vals = [utils.safe_float(row[1]) for row in table_data]
+
+        valid = [(dk, dn) for dk, dn in zip(dk_vals, dadn_vals) if dk > 0 and dn > 0]
+        if len(valid) < 2:
+            setup_growth_plot(ax)
+            return
+
+        dks, dadns = zip(*valid)
+        ax.clear()
+        ax.plot(dks, dadns, 'o-', color='darkorange', linewidth=2, markersize=4,
+                label=f"dKeff Table ({len(valid)} pts)")
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel(r'$\Delta K_{eff}$ (MPa$\sqrt{m}$)')
+        ax.set_ylabel(r'$da/dN$ (m/cycle)')
+        ax.set_title("Crack Growth Rate (Tabular)")
+        ax.grid(True, which="both", linestyle='--', linewidth=0.5, alpha=0.7)
+        ax.legend(loc='lower right', fontsize='small')
+
+    except Exception as e:
+        print(f"Tabular growth plot error: {e}")
+        ax.clear()
+
+
+def plot_spectrum(ax: Axes, levels_data, speak_val=1.0):
+    """
+    Plots a bar chart of spectrum stress levels.
+    Called by SpectrumCreatorWindow to preview the spectrum.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        levels_data: List of [smax_str, smin_str, cycles_str] rows.
+        speak_val: Scale factor applied to all stress values (SPEAK).
+    """
+    try:
+        ax.clear()
+
+        if not levels_data:
+            ax.text(0.5, 0.5, "No spectrum data to display",
+                    ha='center', va='center', transform=ax.transAxes, fontsize=10)
+            ax.set_title("Spectrum Preview")
+            return
+
+        scale = utils.safe_float(speak_val, 1.0)
+        if scale == 0:
+            scale = 1.0
+
+        smaxes, smins, cycles = [], [], []
+        for row in levels_data:
+            sm = utils.safe_float(row[0]) * scale
+            sn = utils.safe_float(row[1]) * scale
+            cy = utils.safe_int(row[2], 1)
+            if cy > 0:
+                smaxes.append(sm)
+                smins.append(sn)
+                cycles.append(cy)
+
+        if not smaxes:
+            ax.text(0.5, 0.5, "No valid stress levels defined",
+                    ha='center', va='center', transform=ax.transAxes)
+            ax.set_title("Spectrum Preview")
+            return
+
+        x = np.arange(len(smaxes))
+        width = 0.8
+
+        bars_max = ax.bar(x, smaxes, width, label='Smax', color='steelblue', alpha=0.8)
+        bars_min = ax.bar(x, smins, width, label='Smin', color='tomato', alpha=0.8)
+
+        ax.set_xlabel("Level Index")
+        ax.set_ylabel("Stress")
+        ax.set_title(f"Spectrum Preview ({len(smaxes)} levels)")
+        ax.legend(loc='upper right', fontsize='small')
+        ax.grid(True, axis='y', linestyle='--', alpha=0.5)
+        ax.axhline(0, color='black', linewidth=0.8)
+
+        if len(x) <= 20:
+            ax.set_xticks(x)
+            ax.set_xticklabels([str(i + 1) for i in x], fontsize=7)
+
+    except Exception as e:
+        print(f"Spectrum plot error: {e}")
+        ax.clear()
+
+
+def plot_post_processing(ax: Axes, header, data, x_col, y_col, log_x=False, log_y=False):
+    """
+    Plots parsed FASTRAN output data for the PostProcessingWindow.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        header: List of column name strings.
+        data: Dict mapping column name → list of float values.
+        x_col: Name of the X-axis column.
+        y_col: Name of the Y-axis column.
+        log_x: Apply log scale to X axis.
+        log_y: Apply log scale to Y axis.
+    """
+    try:
+        ax.clear()
+
+        if not header or not data:
+            ax.text(0.5, 0.5, "No data to display",
+                    ha='center', va='center', transform=ax.transAxes)
+            return
+
+        if x_col not in data or y_col not in data:
+            ax.text(0.5, 0.5, f"Columns '{x_col}' or '{y_col}' not found in data",
+                    ha='center', va='center', transform=ax.transAxes)
+            return
+
+        x_vals = data[x_col]
+        y_vals = data[y_col]
+
+        if not x_vals or not y_vals:
+            ax.text(0.5, 0.5, "Empty data columns",
+                    ha='center', va='center', transform=ax.transAxes)
+            return
+
+        ax.plot(x_vals, y_vals, '-o', linewidth=2, markersize=3,
+                color='royalblue', markerfacecolor='white')
+
+        ax.set_xlabel(x_col)
+        ax.set_ylabel(y_col)
+        ax.set_title(f"{y_col} vs {x_col}")
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        if log_x:
+            ax.set_xscale('log')
+        if log_y:
+            ax.set_yscale('log')
+
+    except Exception as e:
+        print(f"Post-processing plot error: {e}")
         ax.clear()

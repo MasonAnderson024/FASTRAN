@@ -5,10 +5,10 @@ runners.py
 Secure Execution Engine for FASTRAN GUI.
 
 Responsibilities:
-1. Process Management: Runs external EXEs (FASTRAN, DKEFF) in background threads.
-2. Security Enforcement: Performs pre-execution Integrity Checks (Hashing).
-3. Audit Integration: Logs start/stop times and outcomes to the project audit trail.
-4. Input Injection: Pipes data to the solver's STDIN (simulating user typing).
+1. Process Management: Runs FASTRAN and DKEFF in background threads.
+2. Security Enforcement: Performs pre-execution integrity checks (SHA-256 hashing).
+3. Audit Integration: Logs analysis events to the project audit trail.
+4. Blocking Variant: run_fastran_blocking() for use inside batch threads.
 """
 
 import subprocess
@@ -17,26 +17,22 @@ import queue
 import os
 import time
 
-# [SEC] Security Module for Integrity and Logging
-import security 
+import security
+
 
 def _execute_process(exe_path, input_str, working_dir, output_queue):
     """
-    Generic worker to run a CLI tool safely.
-    
-    Args:
-        exe_path (str): Absolute path to the executable.
-        input_str (str): The text to 'type' into the console (STDIN).
-        working_dir (str): The directory to run command in (Sandbox Root).
-        output_queue (Queue): Where to send stdout lines for the GUI to read.
+    Generic worker: runs a CLI executable, pipes input_str to stdin,
+    and streams stdout/stderr to output_queue.
+
+    The final message on the queue is either:
+      "--- PROCESS FINISHED SUCCESS ---"  or  "--- PROCESS FAILED (Code N) ---"
     """
     try:
         if not os.path.exists(exe_path):
             output_queue.put(f"ERROR: Executable not found at {exe_path}")
             return
 
-        # Start the process
-        # shell=False is CRITICAL for security (prevents injection)
         process = subprocess.Popen(
             [exe_path],
             stdin=subprocess.PIPE,
@@ -48,136 +44,187 @@ def _execute_process(exe_path, input_str, working_dir, output_queue):
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
 
-        # Feed the inputs (simulate user typing)
         if input_str:
-            output_queue.put(f"Sending Inputs:\n{input_str}")
             try:
                 process.stdin.write(input_str)
                 process.stdin.flush()
-                process.stdin.close() # Signal EOF
+                process.stdin.close()
             except IOError as e:
-                output_queue.put(f"Error writing to stdin: {e}")
+                output_queue.put(f"STDIN write error: {e}")
 
-        # Stream the output line-by-line
         for line in iter(process.stdout.readline, ''):
             if line:
                 output_queue.put(line.strip())
 
         process.stdout.close()
-        return_code = process.wait()
-        
-        if return_code == 0:
-            output_queue.put("\n--- PROCESS FINISHED SUCCESS ---")
+        rc = process.wait()
+
+        if rc == 0:
+            output_queue.put("--- PROCESS FINISHED SUCCESS ---")
         else:
-            output_queue.put(f"\n--- PROCESS FAILED (Code {return_code}) ---")
+            output_queue.put(f"--- PROCESS FAILED (Code {rc}) ---")
 
     except Exception as e:
         output_queue.put(f"CRITICAL EXECUTION ERROR: {str(e)}")
 
 
+# ------------------------------------------------------------------
+# FASTRAN  — Asynchronous (standard use)
+# ------------------------------------------------------------------
 def run_fastran(exe_path, input_file_abs, output_dir_abs, output_queue, project_root):
     """
-    Runs the FASTRAN solver securely.
-    
+    Runs the FASTRAN solver in a daemon thread.
+
     Args:
-        exe_path: Path to fastran.exe
-        input_file_abs: Absolute path to the input file.
-        output_dir_abs: Absolute path to the output folder.
-        output_queue: Queue for log messages.
-        project_root: The 'Jail' directory to run inside.
+        exe_path:        Path to fastran.exe
+        input_file_abs:  Absolute path to the .txt input file
+        output_dir_abs:  Absolute path to the output directory
+        output_queue:    Queue for GUI log messages
+        project_root:    Project root used as the subprocess working directory
     """
-    # ------------------------------------------------------------------
-    # 1. SECURITY: INTEGRITY CHECK
-    # ------------------------------------------------------------------
     try:
-        # Verify this is the approved, un-tampered executable
         security.IntegrityChecker.verify_tool("fastran", exe_path)
     except security.SecurityError as e:
         output_queue.put(f"SECURITY BLOCK: {str(e)}")
         return
 
-    # ------------------------------------------------------------------
-    # 2. SECURITY: AUDIT LOGGING
-    # ------------------------------------------------------------------
+    logger = None
     try:
-        # Setup Logger
         log_path = os.path.join(project_root, "config", "audit_trail.log")
         logger = security.AuditLogger(log_path)
-        
-        # Hash the Input File (Proof of what was analyzed)
         input_hash = security.IntegrityChecker.calculate_hash(input_file_abs)
         logger.log_event("ANALYSIS_START", f"Input Hash: {input_hash}")
-    except:
-        logger = None # Fail open on logging if file system error, or handle strictly
+    except Exception:
+        pass
 
-    # ------------------------------------------------------------------
-    # 3. PATH PREPARATION
-    # ------------------------------------------------------------------
-    # FASTRAN assumes files are relative to CWD. We run inside project_root.
     input_rel = os.path.relpath(input_file_abs, project_root)
-    
-    # Construct output filename based on input name
     base_name = os.path.splitext(os.path.basename(input_file_abs))[0]
-    output_rel = os.path.join(os.path.relpath(output_dir_abs, project_root), f"{base_name}.fou")
-
-    # The input string FASTRAN expects:
-    # Line 1: Input Filename
-    # Line 2: Output Filename
+    output_rel = os.path.join(
+        os.path.relpath(output_dir_abs, project_root), f"{base_name}.fou"
+    )
     input_str = f"{input_rel}\n{output_rel}\n"
 
-    # ------------------------------------------------------------------
-    # 4. THREADED EXECUTION
-    # ------------------------------------------------------------------
     def _threaded_wrapper():
-        start_time = time.time()
+        start = time.time()
         try:
             _execute_process(exe_path, input_str, project_root, output_queue)
-            
-            duration = time.time() - start_time
             if logger:
-                logger.log_event("ANALYSIS_COMPLETE", f"Duration: {duration:.2f}s", status="SUCCESS")
-                
+                logger.log_event("ANALYSIS_COMPLETE",
+                                 f"Duration: {time.time()-start:.2f}s", status="SUCCESS")
         except Exception as e:
             if logger:
                 logger.log_event("ANALYSIS_FAILED", str(e), status="ERROR")
             output_queue.put(f"Run Error: {e}")
 
-    thread = threading.Thread(target=_threaded_wrapper, daemon=True)
-    thread.start()
+    threading.Thread(target=_threaded_wrapper, daemon=True).start()
 
 
-def run_dkeff(exe_path, dkin_file_abs, output_file_abs, ikeff_option, test_type, output_queue, project_root):
+# ------------------------------------------------------------------
+# FASTRAN  — Blocking (for batch mode — called inside a worker thread)
+# ------------------------------------------------------------------
+def run_fastran_blocking(exe_path, input_file_abs, output_dir_abs, project_root):
     """
-    Runs DKEFF (Crack Opening Stress Analysis).
-    Inputs derived from dkeff21f.for interaction logic.
+    Runs FASTRAN synchronously (blocks until complete).
+    Use ONLY inside a background thread (e.g., batch analysis worker).
+
+    Returns:
+        (success: bool, message: str)
     """
-    # 1. Integrity Check
+    try:
+        security.IntegrityChecker.verify_tool("fastran", exe_path)
+    except security.SecurityError as e:
+        return False, f"SECURITY BLOCK: {str(e)}"
+
+    if not os.path.exists(exe_path):
+        return False, f"Executable not found: {exe_path}"
+
+    input_rel = os.path.relpath(input_file_abs, project_root)
+    base_name = os.path.splitext(os.path.basename(input_file_abs))[0]
+    output_rel = os.path.join(
+        os.path.relpath(output_dir_abs, project_root), f"{base_name}.fou"
+    )
+    input_str = f"{input_rel}\n{output_rel}\n"
+
+    try:
+        result = subprocess.run(
+            [exe_path],
+            input=input_str,
+            capture_output=True,
+            text=True,
+            cwd=project_root,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            timeout=300
+        )
+        if result.returncode == 0:
+            return True, "Success"
+        else:
+            return False, f"FASTRAN exited with code {result.returncode}"
+    except subprocess.TimeoutExpired:
+        return False, "FASTRAN timed out after 5 minutes"
+    except Exception as e:
+        return False, str(e)
+
+
+# ------------------------------------------------------------------
+# DKEFF  — Asynchronous (called from DkeffWindow)
+# ------------------------------------------------------------------
+def run_dkeff(exe_path, dkin_file_abs, output_file_abs, test_type, output_queue,
+              version="dkeff13"):
+    """
+    Runs the DKEFF utility in a daemon thread.
+
+    Signature matches what DkeffWindow calls:
+        runners.run_dkeff(exe_path, dkin_path, dkout_path, test_type_code, queue)
+    Optional `version` kwarg selects the stdin protocol.
+
+    Args:
+        exe_path:        Path to dkeff13.exe or dkeff21f.exe
+        dkin_file_abs:   Absolute path to the prepared .dkin input file
+        output_file_abs: Absolute path for the .dkout output file
+        test_type:       '0' = Constant-R test, '1' = Kmax test
+        output_queue:    Queue for messages back to the GUI
+        version:         'dkeff13' or 'dkeff21' (controls stdin protocol)
+    """
     try:
         security.IntegrityChecker.verify_tool("dkeff", exe_path)
     except security.SecurityError as e:
         output_queue.put(f"SECURITY BLOCK: {str(e)}")
         return
 
-    # 2. Path Prep
-    dkin_rel = os.path.relpath(dkin_file_abs, project_root)
-    out_rel = os.path.relpath(output_file_abs, project_root)
+    # Build working directory relative to the exe so relative paths work
+    working_dir = os.path.dirname(os.path.abspath(exe_path))
+    dkin_rel = os.path.relpath(dkin_file_abs, working_dir)
+    out_rel = os.path.relpath(output_file_abs, working_dir)
 
-    # 3. Input String Construction
-    # Logic:
-    # 1. Option (IKEFF)
-    # 2. Test Type (Only if IKEFF=1)
-    # 3. Input File
-    # 4. Output File
-    input_str = f"{ikeff_option}\n"
-    if str(ikeff_option) == "1":
-        input_str += f"{test_type}\n"
-    input_str += f"{dkin_rel}\n"
-    input_str += f"{out_rel}\n"
+    # dkeff13 stdin protocol:
+    #   Line 1: IKEFF  (1 = from file, 2 = elastic only)
+    #   Line 2: test type (0 = constant-R, 1 = Kmax)  — only if IKEFF=1
+    #   Line 3: input filename
+    #   Line 4: output filename
+    #
+    # dkeff21f stdin protocol differs: IKEFF prompt is removed; it goes directly
+    # to test type, input file, output file. Update this block when dkeff21 is
+    # available and its exact prompts are confirmed.
+    if "21" in version:
+        input_str = f"{test_type}\n{dkin_rel}\n{out_rel}\n"
+    else:
+        # dkeff13 default
+        input_str = f"1\n{test_type}\n{dkin_rel}\n{out_rel}\n"
 
-    # 4. Execution
-    thread = threading.Thread(
-        target=_execute_process,
-        args=(exe_path, input_str, project_root, output_queue),
-        daemon=True
-    )
-    thread.start()
+    def _notify_done():
+        """Translates the generic finish token to the token DkeffWindow expects."""
+        inner_q = queue.Queue()
+        _execute_process(exe_path, input_str, working_dir, inner_q)
+        while True:
+            try:
+                msg = inner_q.get(timeout=0.2)
+                if "PROCESS FINISHED SUCCESS" in msg:
+                    output_queue.put("DONE")
+                    return
+                elif "ERROR" in msg or "FAILED" in msg:
+                    output_queue.put(f"ERROR: {msg}")
+                    return
+            except queue.Empty:
+                pass
+
+    threading.Thread(target=_notify_done, daemon=True).start()

@@ -24,13 +24,14 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 | `exporters.py` | Exports `.fou` output to CSV |
 | `postprocessor.py` | `ComparisonWindow` — multi-run overlay plots |
 | `editors.py` | Toplevel editor windows: `SpectrumCreatorWindow`, `BlockEditorWindow`, `DkeffWindow`, `PostProcessingWindow`, `BatchInputDialog`, `DatasetSelectionDialog` |
+| `dialogs.py` | Top-level utility windows: `HelpWindow` (searchable help viewer + bundled `HELP_CONTENT`), `ProgressWindow` (modal indeterminate-progress dialog) |
 
 **Archive/** holds all prior monolithic versions (v1 through v2.3.3) for reference.
 
-## Current State (as of last session)
+## Current State (as of 2026-04-28)
 
 ### Done
-- Full module split complete; all 14 modules present and syntactically correct
+- Full module split complete; all 15 modules present and syntactically correct
 - **`config.py` fully corrected** per FASTRAN 5.4/5.78f User Guide:
   - `NTYP_DATA`: 26 entries covering all valid NTYP codes (0–8, 99, -1 through -15, -99) with correct names and special-input lists
   - `NFOPT_DATA`: All 11 options (0–10) with correct names and invert/clip labels; NFOPT 6 and 7 added
@@ -40,18 +41,14 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
   - `TOOLTIPS`: ~65 entries, C4 tooltip corrected
 - **`parsers.py` rewritten**: `generate_fastran_input()` follows the exact 18-section FASTRAN input file format; verified against real test files
 - **`importers.py` rewritten**: `parse_fastran_input()` follows the 18-section format; correctly parses real test files (iTest14.txt validated)
-- `editors.py` contains all Toplevel editor classes ported from v2.3.3
+- **`editors.py` wired into main GUI**: Tools menu (Spectrum/Block/DkEff); Loading tab gained dynamic Spectrum-File and Block-Loading sub-frames driven by `NFOPT_DATA` flags; block editor persists to `<project>/config/block_loading.json`
+- **IRATE=4 multi-equation panel**: per-equation suffixed vars (`C1_2..NDKTH_4`); `_build_constants_panel` renders `ttk.Notebook` with N tabs (inline panel for IRATE=1); parser/importer use `eq_key()` helper; round-trip verified for all 4 equations
+- **Section 9/10/11/16 input fields exposed**: AI/AN/HN/RAD/RADF on Geometry tab; LTYP/LFAST/NS/KCONST/NTCMAX on Loading tab (Section 10); NRC/DVALUE/NCYCLE1/NCYCLE2 on Loading tab (Section 16); NIPT/NPRT/LSTEP/NDKE/DCPR on Crack Growth tab (Section 9). `_add_entry` falls back to `config.TOOLTIPS` for automatic contextual help.
+- **`dialogs.py` ported from v2.3.3**: `HelpWindow` (Ctrl+F search, find-next, wrap prompt) wired to a Help menu via `_show_help` singleton; `ProgressWindow` available for future use
 
 ### Still To Do
-- **`editors.py` not imported in `fastran_gui_v2.3.4.py`** — the editor windows exist but aren't wired to any menu items or buttons yet. Need to add `import editors` and connect:
-  - Spectrum file launcher → `SpectrumCreatorWindow`
-  - Block loading editor (NFOPT=1) → `BlockEditorWindow`
-  - DkEff tool → `DkeffWindow`
-- **`_on_irate_change`** in main GUI is `pass` — needs to rebuild constants panel for IRATE=4 (small/large crack transition)
-- **Help window** (`HelpWindow` from v2.3.3) not yet ported to a module
-- **Progress window** (`ProgressWindow` from v2.3.3) not yet ported
-- **Loading tab** is simplified vs v2.3.3 — spectrum file picker and block editor button not yet added
-- **GUI missing fields**: LFAST, KCONST, NS, LTYP, NTCMAX (Section 10); T/HN/RAD/RADF/AI/AN (Section 11); NDKE/LSTEP/NRC/DVALUE (Sections 9, 16)
+- `ProgressWindow` is ported but not yet wired to a caller — natural callers are long-running operations like spectrum conversion in `editors.SpectrumCreatorWindow`, batch generation in `batch.py`, or FASTRAN/DKEFF subprocess execution in `runners.py`
+- `_render_growth_inputs_for_eq` does not yet expose a per-equation crack-growth table editor; eq 2+ tables are written as zero-row in the input file (the parser comment at the table-write site documents this)
 
 ## How to Run
 ```

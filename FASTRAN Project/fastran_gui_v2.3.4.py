@@ -62,16 +62,34 @@ class FastranGui(tk.Tk):
         # Starts the loop to listen for messages from execution threads
         self.after(100, self._monitor_execution_queue)
 
+    # Per-equation crack-growth keys (Section 6 + 7a). Eq 1 uses base keys;
+    # eq 2..4 use suffixed copies (e.g., C1_2, NTAB_3) for IRATE=2 or 4.
+    PER_EQ_KEYS = ('C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7',
+                   'KF', 'M', 'NEQN', 'NTAB', 'NDKTH')
+    MAX_EQUATIONS = 4
+
     def _init_vars(self):
         """Initialize all Tkinter variables from config defaults."""
         self.vars = {}
         for key, value in config.DEFAULT_VALUES.items():
             self.vars[key] = tk.StringVar(value=value)
-        
+
+        # Pre-create suffixed vars for equations 2..MAX_EQUATIONS using the
+        # same defaults as the base keys, so IRATE>1 has somewhere to store
+        # independent constants without breaking save/load state serialization.
+        for eq_idx in range(2, self.MAX_EQUATIONS + 1):
+            for key in self.PER_EQ_KEYS:
+                self.vars[f"{key}_{eq_idx}"] = tk.StringVar(
+                    value=config.DEFAULT_VALUES.get(key, '0'))
+
         # Trace critical variables for real-time plotting (Geometry & Crack Growth)
         # Note: NTYP/NFOPT traces are handled by Combobox bindings
         self.vars['C1'].trace_add("write", self._update_growth_plot)
         self.vars['C2'].trace_add("write", self._update_growth_plot)
+
+    def _var_for(self, key, eq_idx):
+        """Return the StringVar for a Section-6/7a key at the given equation index (1-based)."""
+        return self.vars[key] if eq_idx == 1 else self.vars[f"{key}_{eq_idx}"]
 
     def _load_external_config(self):
         """Finds the EXEs (FASTRAN/DKEFF) from local config."""
@@ -312,10 +330,10 @@ class FastranGui(tk.Tk):
         cb.bind("<<ComboboxSelected>>", self._on_irate_change)
         widgets.ToolTip(cb, "1=Single Law\n4=Small/Large Transition")
 
-        # Constants Container (Dynamic)
+        # Constants Container (Dynamic — rebuilt by _on_irate_change)
         self.constants_frame = ttk.Frame(left)
         self.constants_frame.pack(fill='both', expand=True, pady=10)
-        self._render_standard_growth_inputs(self.constants_frame)
+        self._build_constants_panel()
 
         # Plot
         from matplotlib.figure import Figure
@@ -326,21 +344,65 @@ class FastranGui(tk.Tk):
         self.plot_canvas = FigureCanvasTkAgg(self.plot_fig, master=right)
         self.plot_canvas.get_tk_widget().pack(fill='both', expand=True)
 
-    def _render_standard_growth_inputs(self, parent):
+    def _render_growth_inputs_for_eq(self, parent, eq_idx):
+        """Render Section 6/7a inputs for a single equation (1-indexed)."""
         grp = ttk.LabelFrame(parent, text="Paris Constants (da/dN = C1 * dK^C2)", padding=10)
         grp.pack(fill='x')
-        self._add_entry(grp, "C1 (Coeff):", 'C1', 0, 0)
-        self._add_entry(grp, "C2 (Exp):", 'C2', 0, 1)
-        self._add_entry(grp, "C3:", 'C3', 1, 0)
-        self._add_entry(grp, "C4:", 'C4', 1, 1)
-        
+        self._add_eq_entry(grp, "C1 (Coeff):", 'C1', eq_idx, 0, 0)
+        self._add_eq_entry(grp, "C2 (Exp):",   'C2', eq_idx, 0, 1)
+        self._add_eq_entry(grp, "C3:",         'C3', eq_idx, 1, 0)
+        self._add_eq_entry(grp, "C4:",         'C4', eq_idx, 1, 1)
+
         grp2 = ttk.LabelFrame(parent, text="Thresholds", padding=10)
         grp2.pack(fill='x', pady=5)
-        self._add_entry(grp2, "DKth (C5):", 'C5', 0, 0)
+        self._add_eq_entry(grp2, "DKth (C5):", 'C5', eq_idx, 0, 0)
+        self._add_eq_entry(grp2, "C6:",        'C6', eq_idx, 0, 1)
+        self._add_eq_entry(grp2, "C7:",        'C7', eq_idx, 1, 0)
+
+        grp3 = ttk.LabelFrame(parent, text="Closure / Tabular", padding=10)
+        grp3.pack(fill='x', pady=5)
+        self._add_eq_entry(grp3, "KF:",   'KF',   eq_idx, 0, 0)
+        self._add_eq_entry(grp3, "m:",    'M',    eq_idx, 0, 1)
+        self._add_eq_entry(grp3, "NEQN:", 'NEQN', eq_idx, 1, 0)
+        self._add_eq_entry(grp3, "NTAB:", 'NTAB', eq_idx, 1, 1)
+        self._add_eq_entry(grp3, "NDKTH:",'NDKTH',eq_idx, 2, 0)
+
+    def _add_eq_entry(self, parent, label, key, eq_idx, r, c):
+        ttk.Label(parent, text=label).grid(row=r, column=c*2, sticky='e', padx=5, pady=5)
+        ttk.Entry(parent, textvariable=self._var_for(key, eq_idx), width=12).grid(
+            row=r, column=c*2+1, sticky='w', padx=5)
+
+    def _build_constants_panel(self):
+        """Build (or rebuild) the IRATE-driven Notebook of equation panels."""
+        for w in self.constants_frame.winfo_children():
+            w.destroy()
+        try:
+            irate = int(self.vars['IRATE'].get())
+        except (TypeError, ValueError):
+            irate = 1
+        irate = max(1, min(self.MAX_EQUATIONS, irate))
+
+        if irate == 1:
+            # Single law — render inline (no notebook chrome)
+            self._render_growth_inputs_for_eq(self.constants_frame, 1)
+            return
+
+        nb = ttk.Notebook(self.constants_frame)
+        nb.pack(fill='both', expand=True)
+        eq_labels = {
+            2: ("Eq 1 (c-dir)", "Eq 2 (a-dir)"),
+            4: ("Eq 1 (Small / c)", "Eq 2 (Small / a)",
+                "Eq 3 (Large / c)", "Eq 4 (Large / a)"),
+        }
+        labels = eq_labels.get(irate, tuple(f"Equation {i}" for i in range(1, irate + 1)))
+        for i in range(1, irate + 1):
+            tab = ttk.Frame(nb, padding=8)
+            nb.add(tab, text=labels[i - 1])
+            self._render_growth_inputs_for_eq(tab, i)
 
     def _on_irate_change(self, event=None):
-        # Basic implementation: Clear and rebuild. 
-        pass 
+        self._build_constants_panel()
+        self._update_growth_plot()
 
     def _update_growth_plot(self, *args):
         try:
@@ -465,7 +527,8 @@ class FastranGui(tk.Tk):
                 for k, v in state.items():
                     if k in self.vars: self.vars[k].set(v)
                 self._on_ntyp_change()
-                self._update_growth_plot()
+                self._on_nfopt_change()
+                self._on_irate_change()
             except: pass
 
     # ------------------------------------------------------------------

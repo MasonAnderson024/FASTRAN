@@ -78,21 +78,28 @@ def parse_fastran_input(filepath):
         irate = int(data.get('IRATE', '1'))
 
         # ── Sections 6 & 7 — repeated IRATE times ─────────────────────────────
-        for _j in range(irate):
-            # Section 6: C1 C2 C3 C4 C5 C6 C7 KF m NEQN
+        # Eq 1 → base keys; eq 2..4 → suffixed keys (e.g., C1_2, NTAB_3).
+        def eq_key(base, eq_idx):
+            return base if eq_idx == 1 else f"{base}_{eq_idx}"
+
+        keys6 = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'KF', 'M', 'NEQN']
+        for j in range(1, irate + 1):
+            # Section 6
             p = next_parts()
-            keys6 = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'KF', 'M', 'NEQN']
             for i, k in enumerate(keys6):
                 if i < len(p):
-                    data[k] = p[i]
+                    data[eq_key(k, j)] = p[i]
 
             # Section 7a: NTAB NDKTH
             p = next_parts()
             ntab = 0
             if len(p) >= 2:
-                data['NTAB']  = p[0]
-                data['NDKTH'] = p[1]
-                ntab = int(p[0])
+                data[eq_key('NTAB', j)]  = p[0]
+                data[eq_key('NDKTH', j)] = p[1]
+                try:
+                    ntab = int(p[0])
+                except ValueError:
+                    ntab = 0
 
             # Section 7b: table rows (skip — GUI does not yet display tabular data)
             for _i in range(ntab):

@@ -47,7 +47,6 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         nfopt = int(nfopt_raw.split(':')[0]) if ':' in nfopt_raw else int(nfopt_raw)
         nalp  = int(get_val('NALP'))
         irate = int(get_val('IRATE'))
-        ntab  = int(get_val('NTAB'))
         ltyp  = int(get_val('LTYP'))
 
         lines = []
@@ -72,20 +71,31 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         lines.append(row(irate, get_val('NGC'), get_val('CRKNGC')))
 
         # ── Sections 6 & 7 — repeated IRATE times ────────────────────────────
-        # For IRATE=1: same C1/C2 for both c- and a-directions (handled internally by FASTRAN).
-        # For IRATE=2 or 4: each repetition uses independent laws.
-        # GUI currently exposes only one set; the same constants are written for each repetition.
-        for _j in range(irate):
+        # IRATE=1 single law (eq 1 only); IRATE=2 c/a independent; IRATE=4
+        # small/large transition. Eq 1 uses base keys (C1, C2, ...); eq 2..4
+        # use suffixed keys (C1_2, NTAB_3, ...) populated by the GUI Notebook.
+        def eq_key(base, eq_idx):
+            return base if eq_idx == 1 else f"{base}_{eq_idx}"
+
+        for j in range(1, irate + 1):
             # Section 6: C1 C2 C3 C4 C5 C6 C7 KF m NEQN
             lines.append(row(
-                get_val('C1'), get_val('C2'), get_val('C3'), get_val('C4'),
-                get_val('C5'), get_val('C6'), get_val('C7'),
-                get_val('KF'), get_val('M'), get_val('NEQN')
+                get_val(eq_key('C1', j)), get_val(eq_key('C2', j)),
+                get_val(eq_key('C3', j)), get_val(eq_key('C4', j)),
+                get_val(eq_key('C5', j)), get_val(eq_key('C6', j)),
+                get_val(eq_key('C7', j)),
+                get_val(eq_key('KF', j)), get_val(eq_key('M', j)),
+                get_val(eq_key('NEQN', j))
             ))
-            # Section 7a: NTAB NDKTH
-            lines.append(row(ntab, get_val('NDKTH')))
-            # Section 7b: table rows (NTAB data pairs)
-            if ntab > 0:
+            # Section 7a: NTAB NDKTH (per-equation)
+            try:
+                ntab_j = int(get_val(eq_key('NTAB', j)))
+            except (TypeError, ValueError):
+                ntab_j = 0
+            lines.append(row(ntab_j, get_val(eq_key('NDKTH', j))))
+            # Section 7b: table rows (NTAB data pairs) — eq 1 only; eq 2+ table
+            # editing isn't yet exposed in the GUI, so write zero rows for them.
+            if j == 1 and ntab_j > 0:
                 table_data = vars_dict.get('CGR_TABLE', [])
                 if not is_dict and hasattr(table_data, 'get'):
                     table_data = table_data.get()
@@ -95,7 +105,7 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
                         table_data = ast.literal_eval(table_data)
                     except Exception:
                         table_data = []
-                for dk, rate in list(table_data)[:ntab]:
+                for dk, rate in list(table_data)[:ntab_j]:
                     lines.append(row(dk, rate))
 
         # ── Section 8: NALP=1 transition rates ───────────────────────────────

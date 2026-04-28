@@ -31,8 +31,15 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 
 ### Done
 - Full module split complete; all 14 modules present and syntactically correct
-- `config.py` significantly expanded: full NTYP/NFOPT tables, `FAILURE_MODES`, `TOOLTIPS`, spectrum/block loading flags added
-- `runners.py` and `plots.py` updated (details in git diff vs last commit)
+- **`config.py` fully corrected** per FASTRAN 5.4/5.78f User Guide:
+  - `NTYP_DATA`: 26 entries covering all valid NTYP codes (0–8, 99, -1 through -15, -99) with correct names and special-input lists
+  - `NFOPT_DATA`: All 11 options (0–10) with correct names and invert/clip labels; NFOPT 6 and 7 added
+  - `FAILURE_MODES`: Correct NFCODE 0–6 descriptions from the spec
+  - `DEFAULT_VALUES`: ~96 keys including all new FASTRAN parameters (LFAST, KCONST, NS, LTYP, NTCMAX, T, HN, RAD, RADF, NDKE, LSTEP, NRC, DVALUE, GAMMA, XKT, NBCF, etc.)
+  - `LFAST_DATA`, `LTYP_DATA`, `KCONST_DATA` dropdown tables added
+  - `TOOLTIPS`: ~65 entries, C4 tooltip corrected
+- **`parsers.py` rewritten**: `generate_fastran_input()` follows the exact 18-section FASTRAN input file format; verified against real test files
+- **`importers.py` rewritten**: `parse_fastran_input()` follows the 18-section format; correctly parses real test files (iTest14.txt validated)
 - `editors.py` contains all Toplevel editor classes ported from v2.3.3
 
 ### Still To Do
@@ -44,6 +51,7 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 - **Help window** (`HelpWindow` from v2.3.3) not yet ported to a module
 - **Progress window** (`ProgressWindow` from v2.3.3) not yet ported
 - **Loading tab** is simplified vs v2.3.3 — spectrum file picker and block editor button not yet added
+- **GUI missing fields**: LFAST, KCONST, NS, LTYP, NTCMAX (Section 10); T/HN/RAD/RADF/AI/AN (Section 11); NDKE/LSTEP/NRC/DVALUE (Sections 9, 16)
 
 ## How to Run
 ```

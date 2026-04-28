@@ -4,182 +4,235 @@ importers.py
 ------------
 Legacy Data Importer for FASTRAN GUI.
 
-Responsibilities:
-1. Parsing: Reads raw text FASTRAN input files (positional format).
-2. Mapping: Converts legacy numeric codes (e.g., NTYP=1) into GUI-friendly 
-   string selections (e.g., "1: Center Crack Tension").
-3. Logic: Handles conditional lines (Section 14 Special Inputs) automatically.
+Parses raw text FASTRAN input files (18-section positional format) and maps
+the values to GUI variable names. Based on FASTRAN Version 5.4/5.78f User Guide.
 """
 
 import config
 import os
 
+
 def parse_fastran_input(filepath):
     """
-    Reads a legacy input file and returns a dictionary of values
-    mapped to the GUI's variable names.
-
-    Args:
-        filepath (str): Path to the legacy file.
+    Reads a FASTRAN input file and returns a dict of values mapped to GUI variable names.
 
     Returns:
-        tuple: (Success (bool), Result (dict or error string))
+        tuple: (success (bool), data dict or error string)
     """
-    data = {}
-    
     if not os.path.exists(filepath):
         return False, "File not found."
 
     try:
         with open(filepath, 'r') as f:
-            # Read non-empty lines
-            lines = [line.strip() for line in f if line.strip()]
+            raw_lines = [ln.rstrip() for ln in f]
 
-        if len(lines) < 8:
+        # Strip blank lines and HALT terminators; keep originals for line counting
+        lines = [ln for ln in raw_lines if ln.strip() and not ln.strip().upper().startswith('HALT')]
+
+        if len(lines) < 10:
             return False, "File is too short to be a valid FASTRAN input."
 
-        # --------------------------------------------------------
-        # LINE 1: Title (Ignored by GUI, but good for validation)
-        # --------------------------------------------------------
-        # title = lines[0]
+        data = {}
+        idx = 0  # current line index
 
-        # --------------------------------------------------------
-        # LINE 2: Units & Plotting
-        # Format: LUNIT IUNIT NPLOT IPLOT
-        # --------------------------------------------------------
-        parts = lines[1].split()
-        if len(parts) >= 4:
-            data['LUNIT'] = parts[0]
-            data['IUNIT'] = parts[1]
-            data['NPLOT'] = parts[2]
-            data['IPLOT'] = parts[3]
+        def next_parts():
+            """Advance idx and return whitespace-split tokens of current line."""
+            nonlocal idx
+            if idx >= len(lines):
+                return []
+            parts = lines[idx].split()
+            idx += 1
+            return parts
 
-        # --------------------------------------------------------
-        # LINE 3: Geometry Type & Material Name
-        # Format: NTYP MAT_NAME (MAT can contain spaces)
-        # --------------------------------------------------------
-        line3_parts = lines[2].split(maxsplit=1)
+        def next_line():
+            nonlocal idx
+            if idx >= len(lines):
+                return ""
+            ln = lines[idx]
+            idx += 1
+            return ln.strip()
+
+        # ── Section 1: Problem Title ──────────────────────────────────────────
+        data['TITLE'] = next_line()
+
+        # ── Section 2: Spectrum Filename ──────────────────────────────────────
+        data['SPECTRA'] = next_line()
+
+        # ── Section 3: Material Title ─────────────────────────────────────────
+        data['MAT'] = next_line()
+
+        # ── Section 4: SYIELD SULT E ETA ALP BETAT BETAW NALP NEP ────────────
+        p = next_parts()
+        keys4 = ['SYIELD', 'SULT', 'E', 'ETA', 'ALP', 'BETAT', 'BETAW', 'NALP', 'NEP']
+        for i, k in enumerate(keys4):
+            if i < len(p):
+                data[k] = p[i]
+        nalp = int(data.get('NALP', '0'))
+
+        # ── Section 5: IRATE NGC CRKNGC ───────────────────────────────────────
+        p = next_parts()
+        if len(p) >= 3:
+            data['IRATE']  = p[0]
+            data['NGC']    = p[1]
+            data['CRKNGC'] = p[2]
+        irate = int(data.get('IRATE', '1'))
+
+        # ── Sections 6 & 7 — repeated IRATE times ─────────────────────────────
+        for _j in range(irate):
+            # Section 6: C1 C2 C3 C4 C5 C6 C7 KF m NEQN
+            p = next_parts()
+            keys6 = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'KF', 'M', 'NEQN']
+            for i, k in enumerate(keys6):
+                if i < len(p):
+                    data[k] = p[i]
+
+            # Section 7a: NTAB NDKTH
+            p = next_parts()
+            ntab = 0
+            if len(p) >= 2:
+                data['NTAB']  = p[0]
+                data['NDKTH'] = p[1]
+                ntab = int(p[0])
+
+            # Section 7b: table rows (skip — GUI does not yet display tabular data)
+            for _i in range(ntab):
+                next_line()
+
+        # ── Section 8: NALP=1 transition rates ───────────────────────────────
+        if nalp == 1:
+            p = next_parts()
+            keys8 = ['RATE1', 'ALP1', 'BETAT1', 'BETAW1',
+                     'RATE2', 'ALP2', 'BETAT2', 'BETAW2']
+            for i, k in enumerate(keys8):
+                if i < len(p):
+                    data[k] = p[i]
+
+        # ── Section 9: NIPT NPRT LSTEP NDKE DCPR ─────────────────────────────
+        p = next_parts()
+        keys9 = ['NIPT', 'NPRT', 'LSTEP', 'NDKE', 'DCPR']
+        for i, k in enumerate(keys9):
+            if i < len(p):
+                data[k] = p[i]
+
+        # ── Section 10: NTYP LTYP LFAST NS NFOPT INVERT KCONST NTCMAX ────────
+        p = next_parts()
+        keys10 = ['NTYP', 'LTYP', 'LFAST', 'NS', 'NFOPT', 'INVERT', 'KCONST', 'NTCMAX']
+        raw_ntyp  = 1
+        raw_nfopt = 0
+        raw_ltyp  = 0
+        for i, k in enumerate(keys10):
+            if i < len(p):
+                data[k] = p[i]
         try:
-            ntyp_id = int(line3_parts[0])
-            
-            # Map ID to Full String from Config
-            # e.g. Maps "1" -> "1: Center Crack Tension"
-            matching_opt = next((opt for opt in config.GEOMETRY_OPTIONS if opt.startswith(f"{ntyp_id}:")), None)
-            data['NTYP'] = matching_opt if matching_opt else f"{ntyp_id}: Unknown Legacy Type"
-            
-            if len(line3_parts) > 1:
-                data['MAT'] = line3_parts[1]
+            raw_ntyp  = int(data.get('NTYP',  '1'))
+            raw_nfopt = int(data.get('NFOPT', '0'))
+            raw_ltyp  = int(data.get('LTYP',  '0'))
         except ValueError:
-            return False, f"Invalid NTYP on line 3: {lines[2]}"
+            pass
 
-        # --------------------------------------------------------
-        # LINE 4: Mechanical Props
-        # Format: SYIELD SULT E ETA ALP BETAT BETAW
-        # --------------------------------------------------------
-        parts = lines[3].split()
-        keys = ['SYIELD', 'SULT', 'E', 'ETA', 'ALP', 'BETAT', 'BETAW']
-        for i, key in enumerate(keys):
-            if i < len(parts): data[key] = parts[i]
+        # Map NTYP integer to GUI option string
+        ntyp_opt = next((opt for opt in config.GEOMETRY_OPTIONS if opt.startswith(f"{raw_ntyp}:")), None)
+        data['NTYP'] = ntyp_opt if ntyp_opt else f"{raw_ntyp}: Unknown"
+        # Map NFOPT integer to GUI option string
+        nfopt_opt = next((opt for opt in config.LOADING_OPTIONS if opt.startswith(f"{raw_nfopt}:")), None)
+        data['NFOPT'] = nfopt_opt if nfopt_opt else f"{raw_nfopt}: Unknown"
 
-        # --------------------------------------------------------
-        # LINE 5: Crack Growth Options
-        # Format: NTAB KTAB IRATE NGC NEQN
-        # --------------------------------------------------------
-        parts = lines[4].split()
-        if len(parts) >= 5:
-            data['NTAB'] = parts[0]
-            data['KTAB'] = parts[1]
-            data['IRATE'] = parts[2]
-            data['NGC'] = parts[3]
-            data['NEQN'] = parts[4]
+        # ── Section 11: W T CI AI CN AN HN RAD RADF ──────────────────────────
+        p = next_parts()
+        keys11 = ['W', 'B', 'CI', 'AI', 'CN', 'AN', 'HN', 'RAD', 'RADF']
+        for i, k in enumerate(keys11):
+            if i < len(p):
+                data[k] = p[i]
+        # Also write T = B for consistency
+        if 'B' in data:
+            data['T'] = data['B']
 
-        # --------------------------------------------------------
-        # CONDITIONAL LINES: Paris Constants
-        # If NTAB=0, lines 6 and 7 contain constants.
-        # If NTAB>0, these lines might be skipped or point to tables.
-        # Standard FASTRAN usually includes them even if NTAB>0, but ignored.
-        # We assume standard structure.
-        # --------------------------------------------------------
-        current_line_idx = 5
-        ntab = int(data.get('NTAB', 1))
-        
-        # We try to read them if available, usually lines 6 & 7
-        if current_line_idx < len(lines):
-            # Line 6: C1 C2 C3 C4
-            parts = lines[current_line_idx].split()
-            for i, k in enumerate(['C1', 'C2', 'C3', 'C4']):
-                if i < len(parts): data[k] = parts[i]
-            current_line_idx += 1
-            
-        if current_line_idx < len(lines):
-            # Line 7: C5 C6 C7 (Thresholds)
-            parts = lines[current_line_idx].split()
-            for i, k in enumerate(['C5', 'C6', 'C7']):
-                if i < len(parts): data[k] = parts[i]
-            current_line_idx += 1
+        # ── Section 12: KTAB + table (NTYP=99 or -99 only) ───────────────────
+        if abs(raw_ntyp) == 99:
+            p = next_parts()
+            ktab = int(p[0]) if p else 0
+            data['KTAB'] = str(ktab)
+            for _i in range(ktab):
+                next_line()
 
-        # --------------------------------------------------------
-        # CONDITIONAL LINE: Special Geometry Inputs (Section 14)
-        # Check config to see if this NTYP expects extra lines
-        # --------------------------------------------------------
-        rules = config.NTYP_DATA.get(ntyp_id, {})
-        specials = rules.get('special', [])
-        
-        if specials and current_line_idx < len(lines):
-            # Read the special line
-            special_line = lines[current_line_idx]
-            parts = special_line.split()
-            
-            # Map parts to special keys defined in config
-            for i, req_key in enumerate(specials):
-                if i < len(parts): data[req_key] = parts[i]
-            
-            current_line_idx += 1
+        # ── Section 13: CF ────────────────────────────────────────────────────
+        p = next_parts()
+        if p:
+            data['CF'] = p[0]
 
-        # --------------------------------------------------------
-        # LOADING LINE
-        # Format: NFOPT SMAX R FW FH ...
-        # --------------------------------------------------------
-        if current_line_idx < len(lines):
-            parts = lines[current_line_idx].split()
-            
-            try:
-                nfopt_id = int(parts[0])
-                # Map to GUI string
-                matching_opt = next((opt for opt in config.LOADING_OPTIONS if opt.startswith(f"{nfopt_id}:")), None)
-                data['NFOPT'] = matching_opt if matching_opt else str(nfopt_id)
+        # ── Section 14: Special inputs (conditional on NTYP / LTYP) ──────────
+        if raw_ntyp == 5:
+            p = next_parts()
+            if p: data['RADIUS'] = p[0]
+        elif raw_ntyp in (0, 7) and raw_ltyp == 2:
+            p = next_parts()
+            if p: data['GAMMA'] = p[0]
+        elif raw_ntyp == -10:
+            p = next_parts()
+            if p: data['GAMMA'] = p[0]
+        elif raw_ntyp in (-7, -8, -9):
+            p = next_parts()
+            if len(p) >= 2:
+                data['XKT']  = p[0]
+                data['NBCF'] = p[1]
+        elif raw_ntyp in (-12, -13):
+            p = next_parts()
+            keys14 = ['RIVETS', 'RLF1', 'RLF2', 'NODKL', 'GAMMA', 'DELTA']
+            for i, k in enumerate(keys14):
+                if i < len(p): data[k] = p[i]
 
-                # Remaining Loading Parameters
-                keys = ['SMAX', 'R', 'FW', 'FH', 'INVERT', 'OMIT', 'IOPEN']
-                # Skip the first part (NFOPT)
-                for i, key in enumerate(keys):
-                    if i+1 < len(parts): data[key] = parts[i+1]
-                    
-            except ValueError:
-                pass # Loading line parsing failed, keep defaults
-            
-            current_line_idx += 1
+        # ── Section 15: SMAX SMIN ─────────────────────────────────────────────
+        p = next_parts()
+        if len(p) >= 2:
+            smax = float(p[0])
+            smin = float(p[1])
+            data['SMAX'] = p[0]
+            # Compute R = Smin/Smax; guard against division by zero
+            data['R'] = str(round(smin / smax, 6)) if smax != 0 else '0.0'
 
-        # --------------------------------------------------------
-        # SPECTRUM FILE (Conditional)
-        # Some versions put the filename here if NFOPT expects it
-        # --------------------------------------------------------
-        # Simple heuristic: if the next line is a single string ending in .txt/.spt
-        if current_line_idx < len(lines):
-            potential_file = lines[current_line_idx]
-            if "." in potential_file and len(potential_file.split()) == 1:
-                data['SPECTRA'] = potential_file
-                current_line_idx += 1
+        # ── Section 16: NRC DVALUE NCYCLE1 NCYCLE2 ───────────────────────────
+        p = next_parts()
+        keys16 = ['NRC', 'DVALUE', 'NCYCLE1', 'NCYCLE2']
+        for i, k in enumerate(keys16):
+            if i < len(p): data[k] = p[i]
 
-        # --------------------------------------------------------
-        # GEOMETRY DIMENSIONS
-        # Format: CI CF CN W B AN
-        # --------------------------------------------------------
-        if current_line_idx < len(lines):
-            parts = lines[current_line_idx].split()
-            keys = ['CI', 'CF', 'CN', 'W', 'B', 'AN']
-            for i, key in enumerate(keys):
-                if i < len(parts): data[key] = parts[i]
+        # ── Section 17: Primary loading (just grab SPEAK/SMEAN if present) ────
+        # Full block-data parsing not needed for the GUI import use case.
+        p = next_parts()  # Line 1: MAXSEQ MAXBLK LPRINT MAXLPR [NREP MARKER]
+        if len(p) >= 4:
+            data['MAXSEQ'] = p[0]
+            data['MAXBLK'] = p[1]
+            data['LPRINT'] = p[2]
+            data['MAXLPR'] = p[3]
+        if raw_nfopt == 8 and len(p) >= 6:
+            data['NREP']   = p[4]
+            data['MARKER'] = p[5]
+
+        if raw_nfopt not in (0, 1):
+            # Line 2 is a scalar: SPEAK (or SMEAN for NFOPT=2,3)
+            p2 = next_parts()
+            if p2:
+                if raw_nfopt in (2, 3):
+                    data['SMEAN'] = p2[0]
+                else:
+                    data['SPEAK'] = p2[0]
+        else:
+            # NFOPT=0/1: Line 2 is SCALE, Line 3+ are block definitions
+            p2 = next_parts()  # SCALE
+            if p2: data['SCALE'] = p2[0]
+            # Skip remaining block lines (not parsed into GUI vars)
+            p3 = next_parts()  # NBLK NSL NSQ
+            nsl = int(p3[1]) if len(p3) >= 2 else 1
+            for _level in range(nsl):
+                p_lvl = next_parts()  # SMAXP SMINP NCYCP
+                if len(p_lvl) >= 2 and not data.get('SMAX_PRIMARY'):
+                    data['SMAX_PRIMARY'] = p_lvl[0]
+
+        # ── Section 18: KTH SMAXTH RTH CONST PRT ─────────────────────────────
+        p = next_parts()
+        keys18 = ['KTH', 'SMAXTH', 'RTH', 'CONST', 'PRT']
+        for i, k in enumerate(keys18):
+            if i < len(p): data[k] = p[i]
 
         return True, data
 

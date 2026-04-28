@@ -36,6 +36,7 @@ import batch            # Sensitivity Analysis Engine
 import importers        # Legacy File Support
 import exporters        # CSV Export Logic
 import postprocessor    # Multi-run Comparison Window
+import editors          # Toplevel Editor Windows (Spectrum, Block, DkEff)
 
 class FastranGui(tk.Tk):
     def __init__(self):
@@ -246,11 +247,49 @@ class FastranGui(tk.Tk):
         self.lbl_invert.grid(row=1, column=2, sticky='e', padx=5)
         ttk.Entry(self.load_grid, textvariable=self.vars['INVERT'], width=10).grid(row=1, column=3, sticky='w')
 
+        # Spectrum/Block editor launchers (visibility driven by NFOPT)
+        self.spectrum_frame = ttk.LabelFrame(f, text="Spectrum File", padding=10)
+        self.spectrum_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=5)
+        ttk.Label(self.spectrum_frame, text="Filename:").grid(row=0, column=0, sticky='e', padx=5)
+        ttk.Entry(self.spectrum_frame, textvariable=self.vars['SPECTRA'], width=30).grid(row=0, column=1, sticky='w')
+        ttk.Button(self.spectrum_frame, text="Browse...", command=self._browse_spectrum_file).grid(row=0, column=2, padx=5)
+        ttk.Button(self.spectrum_frame, text="Edit Spectrum...", command=self._launch_spectrum_editor).grid(row=0, column=3, padx=5)
+
+        self.block_frame = ttk.LabelFrame(f, text="Block Loading (NFOPT=1)", padding=10)
+        self.block_frame.grid(row=3, column=0, columnspan=2, sticky='ew', pady=5)
+        ttk.Button(self.block_frame, text="Edit Block Loading...", command=self._launch_block_editor).pack(side='left', padx=5)
+        ttk.Label(self.block_frame, text="(Define variable-amplitude block sequence)").pack(side='left', padx=10)
+
+        # Apply initial visibility
+        self._on_nfopt_change()
+
+    def _browse_spectrum_file(self):
+        if not self.project.project_path:
+            messagebox.showwarning("No Project", "Open or create a project first.")
+            return
+        f = filedialog.askopenfilename(
+            initialdir=self.project.get_path('input'),
+            filetypes=[("Text", "*.txt"), ("All Files", "*.*")])
+        if f:
+            self.vars['SPECTRA'].set(os.path.basename(f))
+
     def _on_nfopt_change(self, event=None):
         try:
             nfopt_id = int(self.vars['NFOPT'].get().split(':')[0])
             rule = config.NFOPT_DATA.get(nfopt_id, {})
             self.lbl_invert.config(text=f"{rule.get('invert_label', 'Invert')}:")
+            needs_spectrum = bool(rule.get('requires_spectrum'))
+            needs_block = bool(rule.get('requires_block'))
+            if hasattr(self, 'spectrum_frame'):
+                if needs_spectrum:
+                    self.spectrum_frame.grid()
+                else:
+                    self.spectrum_frame.grid_remove()
+            if hasattr(self, 'block_frame'):
+                if needs_block:
+                    self.block_frame.grid()
+                else:
+                    self.block_frame.grid_remove()
         except: pass
 
     # ------------------------------------------------------------------
@@ -369,6 +408,14 @@ class FastranGui(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
         
+        # Tools Menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Spectrum Editor...", command=self._launch_spectrum_editor)
+        tools_menu.add_command(label="Block Loading Editor...", command=self._launch_block_editor)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Material Data Generator (DkEff)...", command=self._launch_dkeff)
+
         # Results Menu
         self.results_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Results", menu=self.results_menu)
@@ -570,6 +617,54 @@ class FastranGui(tk.Tk):
     def _launch_postprocessor(self):
         if not self.project.project_path: return
         postprocessor.ComparisonWindow(self, self.project)
+
+    # ------------------------------------------------------------------
+    # EDITOR LAUNCHERS
+    # ------------------------------------------------------------------
+    def _launch_spectrum_editor(self):
+        if not self.project.project_path:
+            messagebox.showwarning("No Project", "Open or create a project first.")
+            return
+        filename = self.vars['SPECTRA'].get().strip() or "spectrum.txt"
+
+        def _on_save(saved_filename):
+            self.vars['SPECTRA'].set(saved_filename)
+
+        editors.SpectrumCreatorWindow(self, _on_save, self.project, filename)
+
+    def _launch_block_editor(self):
+        if not self.project.project_path:
+            messagebox.showwarning("No Project", "Open or create a project first.")
+            return
+
+        cfg_path = os.path.join(self.project.get_path('config'), 'block_loading.json')
+        initial_data = None
+        initial_params = {k: self.vars[k].get() for k in
+                          ('MAXSEQ', 'MAXBLK', 'SCALE', 'LPRINT', 'MAXLPR')}
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, 'r') as f:
+                    saved = json.load(f)
+                initial_data = saved.get('blocks')
+                initial_params.update(saved.get('params', {}))
+            except Exception:
+                pass
+
+        def _on_save(result):
+            try:
+                with open(cfg_path, 'w') as f:
+                    json.dump(result, f, indent=2)
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Could not save block data:\n{e}")
+                return
+            for k, v in result.get('params', {}).items():
+                if k in self.vars:
+                    self.vars[k].set(v)
+
+        editors.BlockEditorWindow(self, _on_save, initial_data, initial_params)
+
+    def _launch_dkeff(self):
+        editors.DkeffWindow(self)
 
     def _open_output_folder(self):
         if self.project.project_path:

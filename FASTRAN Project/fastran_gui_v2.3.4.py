@@ -583,15 +583,81 @@ class FastranGui(tk.Tk):
     # ------------------------------------------------------------------
     # EXECUTION
     # ------------------------------------------------------------------
+    def _validate_run_inputs(self):
+        """
+        Pre-run sanity checks. Returns (errors, warnings) — both lists of
+        human-readable strings. Errors block the run; warnings prompt the
+        user to confirm.
+        """
+        errors, warnings = [], []
+
+        def num(key):
+            try:
+                return float(self.vars[key].get())
+            except (ValueError, TypeError, KeyError):
+                return None
+
+        # Crack-size ordering
+        ci, cf, cn = num('CI'), num('CF'), num('CN')
+        if ci is None or cf is None:
+            errors.append("Initial (Ci) and final (Cf) crack must be valid numbers.")
+        elif cf <= ci:
+            errors.append(f"Final crack Cf ({cf}) must be > initial crack Ci ({ci}).")
+        if cn is not None and ci is not None and cn > ci:
+            errors.append(f"Notch Cn ({cn}) cannot exceed initial crack Ci ({ci}).")
+
+        # Critical dimensions / properties must be positive
+        for key, label in (('W', 'Width'), ('B', 'Thickness'),
+                           ('E', "Young's modulus")):
+            v = num(key)
+            if v is None:
+                errors.append(f"{label} ({key}) must be a valid number.")
+            elif v <= 0:
+                warnings.append(f"{label} ({key}) is non-positive: {v}")
+
+        # Flow-stress check (Smax must stay below (SYIELD+SULT)/2 per FASTRAN docs)
+        sy, su, smax = num('SYIELD'), num('SULT'), num('SMAX')
+        if sy is not None and su is not None and sy > 0 and su > 0 and smax is not None:
+            sflow = (sy + su) / 2.0
+            if smax >= sflow:
+                warnings.append(
+                    f"Smax ({smax}) >= flow stress ({sflow:.1f} = avg of yield and ultimate). "
+                    "FASTRAN may reject this load level.")
+
+        # Spectrum file presence (only if NFOPT requires it)
+        try:
+            nfopt = int(self.vars['NFOPT'].get().split(':')[0])
+        except (ValueError, AttributeError):
+            nfopt = -1
+        rule = config.NFOPT_DATA.get(nfopt, {})
+        if rule.get('requires_spectrum') and self.project.project_path:
+            fname = self.vars['SPECTRA'].get().strip()
+            if not fname:
+                errors.append(f"NFOPT={nfopt} requires a spectrum file but the SPECTRA field is empty.")
+            else:
+                full = os.path.join(self.project.get_path('input'), fname)
+                if not os.path.exists(full):
+                    errors.append(
+                        f"Spectrum file not found in project input/: {fname} "
+                        f"(NFOPT={nfopt} requires one).")
+
+        return errors, warnings
+
     def run_analysis(self):
         if not self.project.project_path: return
-        
+
         # 1. Validation
-        try:
-            if float(self.vars['CF'].get()) <= float(self.vars['CI'].get()):
-                messagebox.showerror("Error", "Final Crack (Cf) must be > Initial (Ci).")
+        errors, warnings = self._validate_run_inputs()
+        if errors:
+            messagebox.showerror(
+                "Validation Errors",
+                "Fix these issues before running:\n\n  • " + "\n  • ".join(errors))
+            return
+        if warnings:
+            msg = ("Possible issues detected:\n\n  • " + "\n  • ".join(warnings)
+                   + "\n\nRun anyway?")
+            if not messagebox.askyesno("Validation Warnings", msg):
                 return
-        except: return
 
         # 2. Save State
         self._save_gui_state()

@@ -28,10 +28,22 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 
 **Archive/** holds all prior monolithic versions (v1 through v2.3.3) for reference.
 
-## Current State (as of 2026-04-28)
+## Current State (as of 2026-04-29)
 
-### Latest Session Summary (2026-04-28)
-Six commits landed on `dev` (ahead of `origin/dev` by 6):
+`dev` and `main` are both at `58b12ba` and synced with origin. The 2026-04-28 modular-refactor work was promoted to `main` together with today's three follow-ups.
+
+### Latest Session Summary (2026-04-29)
+Three commits landed on `dev` and were fast-forward merged into `main`:
+
+| Commit | Title |
+|---|---|
+| `052f786` | Show ProgressWindow during FASTRAN runs |
+| `1340f12` | Per-equation crack-growth rate table editor (Section 7b) |
+| `58b12ba` | Pre-run validation hooks before `run_analysis` |
+
+This session cleared the top three Next Steps from the prior session. The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing populated `CGR_TABLE`, so even single-equation tables were writing zero rows.
+
+### Prior Session Summary (2026-04-28)
 
 | Commit | Title |
 |---|---|
@@ -40,9 +52,7 @@ Six commits landed on `dev` (ahead of `origin/dev` by 6):
 | `57eaa3b` | Implement IRATE=4 multi-equation crack-growth panel |
 | `93828dc` | Expose Section 9/10/11/16 input fields in GUI |
 | `b0589ca` | Port HelpWindow and ProgressWindow to dialogs.py |
-| `58be3c9` | Update CLAUDE.md to reflect this session's work |
-
-The session cleared every previously-documented pending task: editors are wired, IRATE=4 round-trips through parser/importer cleanly, all Section 9/10/11/16 fields are exposed and verified, and the Help and Progress windows are ported to a new `dialogs.py` module. **Push `dev` to GitHub when ready.**
+| `58be3c9` / `e511749` | CLAUDE.md updates |
 
 ### Done
 - Full module split complete; all 15 modules present and syntactically correct
@@ -58,24 +68,16 @@ The session cleared every previously-documented pending task: editors are wired,
 - **`editors.py` wired into main GUI**: Tools menu (Spectrum/Block/DkEff); Loading tab gained dynamic Spectrum-File and Block-Loading sub-frames driven by `NFOPT_DATA` flags; block editor persists to `<project>/config/block_loading.json`
 - **IRATE=4 multi-equation panel**: per-equation suffixed vars (`C1_2..NDKTH_4`); `_build_constants_panel` renders `ttk.Notebook` with N tabs (inline panel for IRATE=1); parser/importer use `eq_key()` helper; round-trip verified for all 4 equations
 - **Section 9/10/11/16 input fields exposed**: AI/AN/HN/RAD/RADF on Geometry tab; LTYP/LFAST/NS/KCONST/NTCMAX on Loading tab (Section 10); NRC/DVALUE/NCYCLE1/NCYCLE2 on Loading tab (Section 16); NIPT/NPRT/LSTEP/NDKE/DCPR on Crack Growth tab (Section 9). `_add_entry` falls back to `config.TOOLTIPS` for automatic contextual help.
-- **`dialogs.py` ported from v2.3.3**: `HelpWindow` (Ctrl+F search, find-next, wrap prompt) wired to a Help menu via `_show_help` singleton; `ProgressWindow` available for future use
+- **`dialogs.py` ported from v2.3.3**: `HelpWindow` (Ctrl+F search, find-next, wrap prompt) wired to a Help menu via `_show_help` singleton; `ProgressWindow` now opens during FASTRAN runs (modal, closes on success/error)
+- **Per-equation Section 7b crack-growth tables**: `editors.CrackGrowthTableDialog` opens from each equation tab via "Edit Table…"; data stored as JSON in `CGR_TABLE` / `CGR_TABLE_2..4` StringVars; parser writes rows for all eqs; importer captures rows (round-trip verified)
+- **Pre-run validation**: `_validate_run_inputs` returns `(errors, warnings)`. Errors block (Cf≤Ci, Cn>Ci, unparseable critical fields, missing spectrum file). Warnings prompt Yes/No (Smax ≥ flow stress, non-positive W/B/E)
 
 ### Next Steps
-Ranked roughly by user-facing value vs. effort. The top two are the natural starting points for the next session.
+Two items remain from the prior backlog. Both are small / polish.
 
-1. **Wire `ProgressWindow` to long-running operations** — _small effort, immediate UX win._ Currently the GUI freezes silently during FASTRAN runs and spectrum conversions. Hook points:
-   - `FastranGui.run_analysis` (most user-visible) — show during `runners.run_fastran` thread; close when the queue reports completion
-   - `editors.SpectrumCreatorWindow._import_spectrum` — show during file conversion
-   - `batch.BatchManager` job generation
-   The window's `start()`/`stop()` API matches v2.3.3's usage pattern at `Archive/fastran_gui_v2.3.3.py:3065`.
+1. **Convert LFAST / LTYP / KCONST to comboboxes** — _small effort, polish._ The `LFAST_DATA` / `LTYP_DATA` / `KCONST_DATA` dicts already exist in `config.py`. Plain Entries currently stand in. Upgrading would require parser/importer to handle a `:` prefix split (matching the NTYP/NFOPT convention) — see the Known Convention note below for the gotcha.
 
-2. **Per-equation crack-growth table editor for IRATE>1** — _medium effort, correctness fix._ Equations 2-4 currently write zero NTAB rows (parsers.py Section 7b loop is gated to eq 1 only). Either: (a) reuse the existing single-table editor for whichever equation is active, or (b) embed a small inline table widget per Notebook tab. Need to also extend `parsers.py` and `importers.py` to read/write `CGR_TABLE_2`, etc.
-
-3. **Validation hooks before `run_analysis`** — _small effort, prevents silent FASTRAN crashes._ Currently only `CF > CI` is validated. Easy wins: warn if `SMAX >= (SYIELD+SULT)/2` (flow stress check from help text), if NTYP requires a special input that's still 0, or if NFOPT requires a spectrum file that doesn't exist on disk.
-
-4. **Convert LFAST / LTYP / KCONST to comboboxes** — _small effort, polish._ The `LFAST_DATA` / `LTYP_DATA` / `KCONST_DATA` dicts already exist in `config.py`. Plain Entries currently stand in. Upgrading would require parser/importer to handle a `:` prefix split (matching the NTYP/NFOPT convention) — see the convention note in the project memory for the gotcha.
-
-5. **Add IRATE=2 to the IRATE combobox** — _trivial._ Combobox values are `['1', '4']`; IRATE=2 (independent c- and a-direction laws) is already supported by the per-equation panel and parser/importer round-trip. Just add `'2'` to the values list.
+2. **Add IRATE=2 to the IRATE combobox** — _trivial._ Combobox values are `['1', '4']`; IRATE=2 (independent c- and a-direction laws) is already supported by the per-equation panel and parser/importer round-trip. Just add `'2'` to the values list.
 
 ### Known Convention
 LFAST/LTYP/KCONST are exposed as plain Entry widgets, not dropdowns. Keeps parser/importer simple — they read the var as a raw integer string. Upgrading these to comboboxes (Next Step #4) would require a `:`-prefix split for normalization, matching the existing NTYP/NFOPT convention (`int(s.split(':')[0])`).

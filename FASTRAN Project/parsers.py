@@ -93,18 +93,25 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
             except (TypeError, ValueError):
                 ntab_j = 0
             lines.append(row(ntab_j, get_val(eq_key('NDKTH', j))))
-            # Section 7b: table rows (NTAB data pairs) — eq 1 only; eq 2+ table
-            # editing isn't yet exposed in the GUI, so write zero rows for them.
-            if j == 1 and ntab_j > 0:
-                table_data = vars_dict.get('CGR_TABLE', [])
+            # Section 7b: table rows (NTAB data pairs) per equation. The GUI
+            # stores each equation's table as a JSON-encoded list under
+            # CGR_TABLE (eq 1) or CGR_TABLE_{j} (eq 2+).
+            if ntab_j > 0:
+                tkey = 'CGR_TABLE' if j == 1 else f'CGR_TABLE_{j}'
+                table_data = vars_dict.get(tkey, [])
                 if not is_dict and hasattr(table_data, 'get'):
                     table_data = table_data.get()
                 if isinstance(table_data, str):
+                    s = table_data.strip()
                     try:
-                        import ast
-                        table_data = ast.literal_eval(table_data)
+                        import json as _json
+                        table_data = _json.loads(s) if s else []
                     except Exception:
-                        table_data = []
+                        try:
+                            import ast
+                            table_data = ast.literal_eval(s)
+                        except Exception:
+                            table_data = []
                 for dk, rate in list(table_data)[:ntab_j]:
                     lines.append(row(dk, rate))
 

@@ -85,6 +85,13 @@ class FastranGui(tk.Tk):
                 self.vars[f"{key}_{eq_idx}"] = tk.StringVar(
                     value=config.DEFAULT_VALUES.get(key, '0'))
 
+        # Per-equation crack-growth tables (Section 7b). Each holds a JSON-encoded
+        # list of [dk, rate] pairs so the existing JSON save/load state code
+        # round-trips them with no special handling.
+        self.vars['CGR_TABLE'] = tk.StringVar(value='[]')
+        for eq_idx in range(2, self.MAX_EQUATIONS + 1):
+            self.vars[f'CGR_TABLE_{eq_idx}'] = tk.StringVar(value='[]')
+
         # Trace critical variables for real-time plotting (Geometry & Crack Growth)
         # Note: NTYP/NFOPT traces are handled by Combobox bindings
         self.vars['C1'].trace_add("write", self._update_growth_plot)
@@ -400,6 +407,9 @@ class FastranGui(tk.Tk):
         self._add_eq_entry(grp3, "NEQN:", 'NEQN', eq_idx, 1, 0)
         self._add_eq_entry(grp3, "NTAB:", 'NTAB', eq_idx, 1, 1)
         self._add_eq_entry(grp3, "NDKTH:",'NDKTH',eq_idx, 2, 0)
+        ttk.Button(grp3, text="Edit Table...",
+                   command=lambda i=eq_idx: self._launch_cgr_table_editor(i)
+                   ).grid(row=2, column=2, columnspan=2, sticky='w', padx=10)
 
     def _add_eq_entry(self, parent, label, key, eq_idx, r, c):
         ttk.Label(parent, text=label).grid(row=r, column=c*2, sticky='e', padx=5, pady=5)
@@ -781,6 +791,22 @@ class FastranGui(tk.Tk):
 
     def _launch_dkeff(self):
         editors.DkeffWindow(self)
+
+    def _cgr_table_var(self, eq_idx):
+        return self.vars['CGR_TABLE'] if eq_idx == 1 else self.vars[f'CGR_TABLE_{eq_idx}']
+
+    def _launch_cgr_table_editor(self, eq_idx):
+        var = self._cgr_table_var(eq_idx)
+        try:
+            initial = json.loads(var.get() or '[]')
+        except json.JSONDecodeError:
+            initial = []
+
+        def _on_save(rows):
+            var.set(json.dumps(rows))
+            self._var_for('NTAB', eq_idx).set(str(len(rows)))
+
+        editors.CrackGrowthTableDialog(self, _on_save, initial, eq_idx)
 
     def _show_help(self):
         if self.help_window is None or not self.help_window.winfo_exists():

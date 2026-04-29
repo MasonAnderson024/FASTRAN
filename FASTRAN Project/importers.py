@@ -9,6 +9,7 @@ the values to GUI variable names. Based on FASTRAN Version 5.4/5.78f User Guide.
 """
 
 import config
+import json
 import os
 
 
@@ -101,9 +102,15 @@ def parse_fastran_input(filepath):
                 except ValueError:
                     ntab = 0
 
-            # Section 7b: table rows (skip — GUI does not yet display tabular data)
+            # Section 7b: table rows — captured per-equation as JSON-encoded
+            # list of [dk, rate] pairs under CGR_TABLE (eq 1) / CGR_TABLE_{j}.
+            tab_rows = []
             for _i in range(ntab):
-                next_line()
+                parts = next_parts()
+                if len(parts) >= 2:
+                    tab_rows.append([parts[0], parts[1]])
+            tkey = 'CGR_TABLE' if j == 1 else f'CGR_TABLE_{j}'
+            data[tkey] = json.dumps(tab_rows)
 
         # ── Section 8: NALP=1 transition rates ───────────────────────────────
         if nalp == 1:

@@ -1443,3 +1443,105 @@ class DatasetSelectionDialog(tk.Toplevel):
     def on_cancel(self):
         self.result_index = None
         self.destroy()
+
+
+# ==============================================================
+# CRACK-GROWTH RATE TABLE EDITOR (Section 7b, per equation)
+# ==============================================================
+class CrackGrowthTableDialog(tk.Toplevel):
+    """Per-equation tabular (ΔKeff, da/dN) editor for FASTRAN Section 7b."""
+
+    def __init__(self, parent, callback, initial_data, eq_idx):
+        super().__init__(parent)
+        self.title(f"Crack-Growth Rate Table — Equation {eq_idx}")
+        self.geometry("520x520")
+        self.transient(parent)
+        self.grab_set()
+
+        self.callback = callback
+        self.rows = copy.deepcopy(initial_data) if initial_data else []
+        self.row_widgets = []
+
+        hint = ttk.Label(
+            self, padding=(10, 8),
+            text=("Enter (ΔKeff, da/dN) data points in ascending ΔKeff order.\n"
+                  "FASTRAN will write the first NTAB rows from this table."))
+        hint.pack(fill='x')
+
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill='both', expand=True)
+
+        # Header
+        for i, hdr in enumerate(["ΔKeff", "da/dN", "Actions"]):
+            ttk.Label(body, text=hdr, font="-weight bold").grid(
+                row=0, column=i, padx=5, pady=5,
+                columnspan=(3 if hdr == "Actions" else 1))
+
+        self.table_frame = ttk.Frame(body)
+        self.table_frame.grid(row=1, column=0, columnspan=4, sticky='nsew')
+
+        ctrl = ttk.Frame(self, padding=(10, 0))
+        ctrl.pack(fill='x')
+        ttk.Button(ctrl, text="Add Row", command=self._add_row).pack(side='left', padx=2)
+
+        bottom = ttk.Frame(self, padding=10)
+        bottom.pack(fill='x', side='bottom')
+        ttk.Button(bottom, text="Save & Close", command=self._save_and_close).pack(side='right', padx=2)
+        ttk.Button(bottom, text="Cancel", command=self.destroy).pack(side='right')
+
+        self._redraw()
+
+    def _redraw(self):
+        for w in self.table_frame.winfo_children():
+            w.destroy()
+        self.row_widgets.clear()
+        for i, (dk, rate) in enumerate(self.rows):
+            dk_e = ttk.Entry(self.table_frame, width=18)
+            dk_e.insert(0, str(dk))
+            dk_e.grid(row=i, column=0, padx=5, pady=2)
+            r_e = ttk.Entry(self.table_frame, width=18)
+            r_e.insert(0, str(rate))
+            r_e.grid(row=i, column=1, padx=5, pady=2)
+            up = ttk.Button(self.table_frame, text="↑", width=3,
+                            command=lambda i=i: self._move(i, -1))
+            up.grid(row=i, column=2, padx=(10, 2))
+            dn = ttk.Button(self.table_frame, text="↓", width=3,
+                            command=lambda i=i: self._move(i, 1))
+            dn.grid(row=i, column=3, padx=2)
+            de = ttk.Button(self.table_frame, text="Delete", width=8,
+                            command=lambda i=i: self._delete(i))
+            de.grid(row=i, column=4, padx=2)
+            if i == 0:
+                up.config(state="disabled")
+            if i == len(self.rows) - 1:
+                dn.config(state="disabled")
+            self.row_widgets.append((dk_e, r_e))
+
+    def _sync_from_widgets(self):
+        for i, (dk_e, r_e) in enumerate(self.row_widgets):
+            if i < len(self.rows):
+                self.rows[i] = [dk_e.get(), r_e.get()]
+
+    def _add_row(self):
+        self._sync_from_widgets()
+        self.rows.append(['0.0', '0.0'])
+        self._redraw()
+
+    def _delete(self, idx):
+        self._sync_from_widgets()
+        if 0 <= idx < len(self.rows):
+            self.rows.pop(idx)
+            self._redraw()
+
+    def _move(self, idx, delta):
+        self._sync_from_widgets()
+        new_idx = idx + delta
+        if 0 <= new_idx < len(self.rows):
+            self.rows[idx], self.rows[new_idx] = self.rows[new_idx], self.rows[idx]
+            self._redraw()
+
+    def _save_and_close(self):
+        self._sync_from_widgets()
+        if self.callback:
+            self.callback(self.rows)
+        self.destroy()

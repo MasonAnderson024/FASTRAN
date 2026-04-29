@@ -51,6 +51,7 @@ class FastranGui(tk.Tk):
         self.fastran_exe_path = None
         self.dkeff_exe_path = None
         self.help_window = None
+        self.run_progress = None
         
         # --- Configuration ---
         self._load_external_config()
@@ -596,9 +597,21 @@ class FastranGui(tk.Tk):
         self.status_var.set("Running FASTRAN...")
         self.btn_run.config(state='disabled')
         runners.run_fastran(
-            self.fastran_exe_path, inp_path, self.project.get_path('output'), 
+            self.fastran_exe_path, inp_path, self.project.get_path('output'),
             self.log_queue, self.project.project_path
         )
+        self.run_progress = dialogs.ProgressWindow(
+            self, title="Running FASTRAN", message="Analysis in progress..."
+        )
+        self.run_progress.start()
+
+    def _close_run_progress(self):
+        if self.run_progress is not None:
+            try:
+                self.run_progress.stop()
+            except tk.TclError:
+                pass
+            self.run_progress = None
 
     def _run_batch_analysis(self):
         if not self.project.project_path: return
@@ -659,11 +672,13 @@ class FastranGui(tk.Tk):
             while True:
                 msg = self.log_queue.get_nowait()
                 if "PROCESS FINISHED" in msg:
+                    self._close_run_progress()
                     self.status_var.set("Run Complete.")
                     self.btn_run.config(state='normal')
                     self.results_menu.entryconfig("Export to CSV...", state="normal")
                     messagebox.showinfo("Success", "Analysis Complete.")
                 elif "ERROR" in msg or "SECURITY BLOCK" in msg:
+                    self._close_run_progress()
                     self.status_var.set("Run Failed.")
                     self.btn_run.config(state='normal')
                     messagebox.showerror("Error", msg)

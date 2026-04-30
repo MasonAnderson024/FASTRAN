@@ -28,11 +28,19 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 
 **Archive/** holds all prior monolithic versions (v1 through v2.3.3) for reference.
 
-## Current State (as of 2026-04-29)
+## Current State (as of 2026-04-30)
 
-`dev` and `main` are both at `58b12ba` and synced with origin. The 2026-04-28 modular-refactor work was promoted to `main` together with today's three follow-ups.
+### Latest Session Summary (2026-04-30)
+Cleared the last two Next Steps from the prior backlog and tidied up tracked cache files:
 
-### Latest Session Summary (2026-04-29)
+| Commit | Title |
+|---|---|
+| `0c222e4` | Untrack `__pycache__` files (already in .gitignore) |
+| `5ae47c8` | LFAST/LTYP/KCONST → comboboxes; add IRATE=2 option |
+
+The combobox upgrade also added an `int_prefix()` helper in `parsers.py` and a `label_for_int()` helper + new OPTIONS lists in `config.py`, mirroring the NTYP/NFOPT convention. `_load_gui_state` migrates older bare-integer state values into the new full-label form on load.
+
+### Prior Session Summary (2026-04-29)
 Three commits landed on `dev` and were fast-forward merged into `main`:
 
 | Commit | Title |
@@ -41,7 +49,7 @@ Three commits landed on `dev` and were fast-forward merged into `main`:
 | `1340f12` | Per-equation crack-growth rate table editor (Section 7b) |
 | `58b12ba` | Pre-run validation hooks before `run_analysis` |
 
-This session cleared the top three Next Steps from the prior session. The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing populated `CGR_TABLE`, so even single-equation tables were writing zero rows.
+The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing populated `CGR_TABLE`, so even single-equation tables were writing zero rows.
 
 ### Prior Session Summary (2026-04-28)
 
@@ -71,13 +79,16 @@ This session cleared the top three Next Steps from the prior session. The crack-
 - **`dialogs.py` ported from v2.3.3**: `HelpWindow` (Ctrl+F search, find-next, wrap prompt) wired to a Help menu via `_show_help` singleton; `ProgressWindow` now opens during FASTRAN runs (modal, closes on success/error)
 - **Per-equation Section 7b crack-growth tables**: `editors.CrackGrowthTableDialog` opens from each equation tab via "Edit Table…"; data stored as JSON in `CGR_TABLE` / `CGR_TABLE_2..4` StringVars; parser writes rows for all eqs; importer captures rows (round-trip verified)
 - **Pre-run validation**: `_validate_run_inputs` returns `(errors, warnings)`. Errors block (Cf≤Ci, Cn>Ci, unparseable critical fields, missing spectrum file). Warnings prompt Yes/No (Smax ≥ flow stress, non-positive W/B/E)
+- **LFAST / LTYP / KCONST comboboxes**: descriptive `N: label` dropdowns with auto-generated `*_OPTIONS` lists; parser strips integer prefix on write, importer remaps integers to labels on read; legacy bare-integer state migrates on project load
+- **IRATE=2 option**: now selectable from the combobox alongside `1` and `4`; backend was already capable
 
 ### Next Steps
-Two items remain from the prior backlog. Both are small / polish.
+The original backlog from CLAUDE.md is now empty. Open ideas if appetite appears:
 
-1. **Convert LFAST / LTYP / KCONST to comboboxes** — _small effort, polish._ The `LFAST_DATA` / `LTYP_DATA` / `KCONST_DATA` dicts already exist in `config.py`. Plain Entries currently stand in. Upgrading would require parser/importer to handle a `:` prefix split (matching the NTYP/NFOPT convention) — see the Known Convention note below for the gotcha.
-
-2. **Add IRATE=2 to the IRATE combobox** — _trivial._ Combobox values are `['1', '4']`; IRATE=2 (independent c- and a-direction laws) is already supported by the per-equation panel and parser/importer round-trip. Just add `'2'` to the values list.
+- **Material-library integration polish.** The Material tab has Load/Save buttons but the `MaterialManager` JSON layout could benefit from versioning, plus a way to surface "current material file" status in the UI.
+- **Output viewer.** `parsers.read_fastran_output` exists and `exporters.export_to_csv` works, but there's no in-app way to inspect a `.fou` directly — currently the only flow is "open output folder" or "compare runs." A simple read-only `.fou` viewer in `dialogs.py` would close that gap.
+- **Validation: extend coverage.** `_validate_run_inputs` covers the obvious foot-guns. Worth considering: NTYP-specific special-input checks (e.g., RIVETS=0 for NTYP=-12,-13), IRATE>1 with eq>1 constants left at defaults (warning), DKth (`C5`) > 0 sanity if NTAB tables aren't in use.
+- **Tests.** No automated test suite exists; round-trips were verified by ad-hoc smoke scripts. A small `pytest` module covering parser/importer round-trips would lock in the format guarantees.
 
 ### Known Convention
 LFAST/LTYP/KCONST are exposed as plain Entry widgets, not dropdowns. Keeps parser/importer simple — they read the var as a raw integer string. Upgrading these to comboboxes (Next Step #4) would require a `:`-prefix split for normalization, matching the existing NTYP/NFOPT convention (`int(s.split(':')[0])`).

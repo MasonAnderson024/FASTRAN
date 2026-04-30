@@ -296,11 +296,11 @@ class FastranGui(tk.Tk):
         # Section 10: Specimen / loading options
         sec10 = ttk.LabelFrame(f, text="Specimen & Loading Options (Section 10)", padding=10)
         sec10.grid(row=4, column=0, columnspan=2, sticky='ew', pady=5)
-        self._add_entry(sec10, "LTYP:",   'LTYP',   0, 0)
-        self._add_entry(sec10, "LFAST:",  'LFAST',  0, 1)
-        self._add_entry(sec10, "NS:",     'NS',     1, 0)
-        self._add_entry(sec10, "KCONST:", 'KCONST', 1, 1)
-        self._add_entry(sec10, "NTCMAX:", 'NTCMAX', 2, 0)
+        self._add_combobox(sec10, "LTYP:",   'LTYP',   config.LTYP_OPTIONS,   0, 0)
+        self._add_combobox(sec10, "LFAST:",  'LFAST',  config.LFAST_OPTIONS,  1, 0)
+        self._add_combobox(sec10, "KCONST:", 'KCONST', config.KCONST_OPTIONS, 2, 0)
+        self._add_entry(sec10, "NS:",     'NS',     3, 0)
+        self._add_entry(sec10, "NTCMAX:", 'NTCMAX', 3, 1)
 
         # Section 16: Proof test / constant So
         sec16 = ttk.LabelFrame(f, text="Proof Test / Constant So (Section 16)", padding=10)
@@ -357,10 +357,10 @@ class FastranGui(tk.Tk):
         # Options
         opt_f = ttk.Frame(left); opt_f.pack(fill='x')
         ttk.Label(opt_f, text="Model Option (IRATE):").pack(side='left')
-        cb = ttk.Combobox(opt_f, textvariable=self.vars['IRATE'], values=['1', '4'], width=5, state='readonly')
+        cb = ttk.Combobox(opt_f, textvariable=self.vars['IRATE'], values=['1', '2', '4'], width=5, state='readonly')
         cb.pack(side='left', padx=5)
         cb.bind("<<ComboboxSelected>>", self._on_irate_change)
-        widgets.ToolTip(cb, "1=Single Law\n4=Small/Large Transition")
+        widgets.ToolTip(cb, "1 = Single law\n2 = Two independent laws (c- and a-directions)\n4 = Small/large-crack transition")
 
         # Section 9: Output Options
         sec9 = ttk.LabelFrame(left, text="Output Options (Section 9)", padding=10)
@@ -575,6 +575,14 @@ class FastranGui(tk.Tk):
                     state = json.load(f)
                 for k, v in state.items():
                     if k in self.vars: self.vars[k].set(v)
+                # Migrate legacy bare-integer values for combobox-driven fields
+                # (older saves predate the LTYP/LFAST/KCONST combobox upgrade).
+                for key, options in (('LTYP', config.LTYP_OPTIONS),
+                                     ('LFAST', config.LFAST_OPTIONS),
+                                     ('KCONST', config.KCONST_OPTIONS)):
+                    cur = self.vars[key].get()
+                    if ':' not in cur:
+                        self.vars[key].set(config.label_for_int(cur, options))
                 self._on_ntyp_change()
                 self._on_nfopt_change()
                 self._on_irate_change()
@@ -893,6 +901,16 @@ class FastranGui(tk.Tk):
         if tip:
             widgets.ToolTip(e, tip)
         return e
+
+    def _add_combobox(self, parent, label, var, options, r, c, tooltip=None):
+        ttk.Label(parent, text=label).grid(row=r, column=c*2, sticky='e', padx=5, pady=5)
+        cb = ttk.Combobox(parent, textvariable=self.vars[var], values=options,
+                          state='readonly', width=max(40, max(len(o) for o in options)))
+        cb.grid(row=r, column=c*2+1, columnspan=3, sticky='w', padx=5)
+        tip = tooltip if tooltip is not None else config.TOOLTIPS.get(var)
+        if tip:
+            widgets.ToolTip(cb, tip)
+        return cb
 
 
 if __name__ == "__main__":

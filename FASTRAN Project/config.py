@@ -217,6 +217,44 @@ KCONST_DATA = {
 
 
 # ------------------------------
+# DROPDOWN OPTION LISTS
+# Option strings use "N: label" (colon) format so parsers/importers can
+# extract the integer prefix the same way they do for NTYP / NFOPT.
+# ------------------------------
+def _to_option_str(k, raw):
+    """Convert 'N — text' form (em-dash) to 'N: text' form (colon)."""
+    body = raw.split('—', 1)[1].strip() if '—' in raw else raw
+    return f"{k}: {body}"
+
+
+LFAST_OPTIONS  = [_to_option_str(k, v) for k, v in sorted(LFAST_DATA.items())]
+LTYP_OPTIONS   = [_to_option_str(k, v) for k, v in sorted(LTYP_DATA.items())]
+KCONST_OPTIONS = [_to_option_str(k, v) for k, v in sorted(KCONST_DATA.items())]
+
+
+def label_for_int(value, options):
+    """Look up the 'N: label' form matching the integer value. Falls back to str(value)."""
+    try:
+        n = int(value)
+    except (ValueError, TypeError):
+        return str(value)
+    for opt in options:
+        try:
+            if int(opt.split(':', 1)[0]) == n:
+                return opt
+        except ValueError:
+            continue
+    return str(value)
+
+
+# Promote the option-0 label as the GUI default for the three combobox-driven
+# Section 10 fields (overrides the bare-integer defaults written above).
+DEFAULT_VALUES['LTYP']   = LTYP_OPTIONS[0]
+DEFAULT_VALUES['LFAST']  = LFAST_OPTIONS[0]
+DEFAULT_VALUES['KCONST'] = KCONST_OPTIONS[0]
+
+
+# ------------------------------
 # DROPDOWN LIST GENERATORS
 # ------------------------------
 GEOMETRY_OPTIONS = [

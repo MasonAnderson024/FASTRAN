@@ -150,6 +150,12 @@ def parse_fastran_input(filepath):
         # Map NFOPT integer to GUI option string
         nfopt_opt = next((opt for opt in config.LOADING_OPTIONS if opt.startswith(f"{raw_nfopt}:")), None)
         data['NFOPT'] = nfopt_opt if nfopt_opt else f"{raw_nfopt}: Unknown"
+        # Map LTYP / LFAST / KCONST integers to GUI option strings
+        for key, options in (('LTYP', config.LTYP_OPTIONS),
+                             ('LFAST', config.LFAST_OPTIONS),
+                             ('KCONST', config.KCONST_OPTIONS)):
+            if key in data:
+                data[key] = config.label_for_int(data[key], options)
 
         # ── Section 11: W T CI AI CN AN HN RAD RADF ──────────────────────────
         p = next_parts()

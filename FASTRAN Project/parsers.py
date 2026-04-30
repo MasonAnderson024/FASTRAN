@@ -40,14 +40,17 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         def row(*vals):
             return "  ".join(str(v) for v in vals)
 
+        def int_prefix(raw):
+            """Extract leading integer from 'N: label' or '-N: label' combobox values; pass plain ints through."""
+            s = str(raw).strip()
+            return int(s.split(':', 1)[0]) if ':' in s else int(s)
+
         # Extract commonly used integers up front
-        ntyp_raw = get_val('NTYP')
-        ntyp = int(ntyp_raw.split(':')[0]) if ':' in ntyp_raw else int(ntyp_raw)
-        nfopt_raw = get_val('NFOPT')
-        nfopt = int(nfopt_raw.split(':')[0]) if ':' in nfopt_raw else int(nfopt_raw)
+        ntyp  = int_prefix(get_val('NTYP'))
+        nfopt = int_prefix(get_val('NFOPT'))
         nalp  = int(get_val('NALP'))
         irate = int(get_val('IRATE'))
-        ltyp  = int(get_val('LTYP'))
+        ltyp  = int_prefix(get_val('LTYP'))
 
         lines = []
 
@@ -130,8 +133,8 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
 
         # ── Section 10: NTYP LTYP LFAST NS NFOPT INVERT KCONST NTCMAX ────────
         lines.append(row(
-            ntyp, ltyp, get_val('LFAST'), get_val('NS'),
-            nfopt, get_val('INVERT'), get_val('KCONST'), get_val('NTCMAX')
+            ntyp, ltyp, int_prefix(get_val('LFAST')), get_val('NS'),
+            nfopt, get_val('INVERT'), int_prefix(get_val('KCONST')), get_val('NTCMAX')
         ))
 
         # ── Section 11: W T CI AI CN AN HN RAD RADF ──────────────────────────

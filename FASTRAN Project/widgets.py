@@ -73,8 +73,18 @@ class GeometryCanvas(tk.Frame):
         self.current_ntyp = ntyp
 
         # --- DRAWING LOGIC ---
-        
-        if ntyp == 1: # Center Crack Tension (M(T))
+
+        if ntyp == 0:  # Surface Crack (Tension/Bending)
+            self._draw_plate()
+            # Semi-elliptical surface crack on the front face (top)
+            self.ax.add_patch(patches.Ellipse((50, 90), 22, 6, color='red'))
+            self._draw_tension_arrows()
+            self._add_label(50, 80, "2c")
+            self._add_label(28, 50, "a")
+            self.ax.annotate("", xy=(20, 60), xytext=(20, 90),
+                             arrowprops=dict(arrowstyle='<->', color='blue'))
+
+        elif ntyp == 1: # Center Crack Tension (M(T))
             self._draw_plate()
             # Draw Center Crack
             self.ax.add_patch(patches.Rectangle((40, 48), 20, 4, color='red', label='2a'))
@@ -124,6 +134,34 @@ class GeometryCanvas(tk.Frame):
             self._add_label(50, 50, "Radius")
             self._add_label(90, 55, "a")
 
+        elif ntyp == 6:  # Corner Crack a=c in Square-Bar (AGARD)
+            self.ax.add_patch(patches.Rectangle((20, 20), 60, 60, fill=False,
+                                                edgecolor='black', linewidth=2))
+            # Quarter-ellipse at top-right corner
+            self.ax.add_patch(patches.Wedge((80, 80), 14, 180, 270, color='red'))
+            self._add_label(75, 70, "a=c")
+            self._add_label(50, 13, "Square Bar")
+
+        elif ntyp == 7:  # Corner Crack in Plate (Tension/Bending)
+            self._draw_plate()
+            self.ax.add_patch(patches.Wedge((90, 90), 14, 180, 270, color='red'))
+            self._draw_tension_arrows()
+            self._add_label(80, 80, "a, c")
+
+        elif ntyp == 8:  # Double-Edge Crack Tension D(T)
+            self._draw_plate()
+            self.ax.add_patch(patches.Rectangle((10, 48), 22, 4, color='red'))
+            self.ax.add_patch(patches.Rectangle((68, 48), 22, 4, color='red'))
+            self._draw_tension_arrows()
+            self._add_label(20, 56, "a")
+            self._add_label(80, 56, "a")
+
+        elif ntyp == 99:  # User-Defined Geometry
+            self.ax.add_patch(patches.Rectangle((20, 30), 60, 40, fill=False,
+                                                edgecolor='gray', linestyle='--'))
+            self.ax.text(50, 50, "User-Defined Geometry\n(Fc vs c/w table)",
+                         ha='center', va='center', fontsize=10, fontstyle='italic')
+
         elif ntyp == -1: # Corner Crack at Hole
             self._draw_plate()
             # Draw Hole
@@ -132,6 +170,79 @@ class GeometryCanvas(tk.Frame):
             self.ax.add_patch(patches.Polygon([[62, 50], [70, 50], [62, 58]], color='red'))
             self._add_label(72, 55, "c")
             self._add_label(50, 30, "Dia")
+
+        elif ntyp == -2:  # Two Corner Cracks at Hole
+            self._draw_plate()
+            self.ax.add_patch(patches.Circle((50, 50), 12, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Polygon([[62, 50], [70, 50], [62, 58]], color='red'))
+            self.ax.add_patch(patches.Polygon([[38, 50], [30, 50], [38, 58]], color='red'))
+            self._add_label(50, 30, "Dia")
+
+        elif ntyp == -3:  # One Through Crack at Hole
+            self._draw_plate()
+            self.ax.add_patch(patches.Circle((50, 50), 10, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Rectangle((60, 49), 25, 2, color='red'))
+            self._add_label(72, 55, "c")
+            self._add_label(50, 32, "Dia")
+
+        elif ntyp == -4:  # Two Through Cracks at Hole
+            self._draw_plate()
+            self.ax.add_patch(patches.Circle((50, 50), 10, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Rectangle((60, 49), 25, 2, color='red'))
+            self.ax.add_patch(patches.Rectangle((15, 49), 25, 2, color='red'))
+            self._add_label(50, 32, "Dia")
+
+        elif ntyp == -5:  # One Surface Crack at Center of Hole (bore)
+            self._draw_plate()
+            self.ax.add_patch(patches.Circle((50, 50), 12, fill=False, edgecolor='black'))
+            # Surface crack on bore wall (right side, mid-thickness)
+            self.ax.add_patch(patches.Ellipse((62, 50), 5, 12, color='red'))
+            self._add_label(72, 50, "2c (bore)")
+
+        elif ntyp == -6:  # Two Surface Cracks at Center of Hole (bore)
+            self._draw_plate()
+            self.ax.add_patch(patches.Circle((50, 50), 12, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Ellipse((62, 50), 5, 12, color='red'))
+            self.ax.add_patch(patches.Ellipse((38, 50), 5, 12, color='red'))
+            self._add_label(50, 30, "2c (each side)")
+
+        elif ntyp == -7:  # Surface Crack at Semi-Circular Edge Notch
+            self._draw_plate()
+            self._draw_edge_notch(side='left', y=50, radius=8)
+            self.ax.add_patch(patches.Ellipse((25, 50), 12, 4, color='red'))
+            self._add_label(25, 60, "2c")
+            self._add_label(15, 70, "Notch")
+
+        elif ntyp == -8:  # Through Crack at Semi-Circular Edge Notch
+            self._draw_plate()
+            self._draw_edge_notch(side='left', y=50, radius=8)
+            self.ax.add_patch(patches.Rectangle((18, 49), 22, 2, color='red'))
+            self._add_label(28, 56, "c")
+            self._add_label(15, 70, "Notch")
+
+        elif ntyp == -9:  # Corner Crack at Semi-Circular Edge Notch
+            self._draw_plate()
+            self._draw_edge_notch(side='left', y=50, radius=8)
+            self.ax.add_patch(patches.Wedge((18, 50), 8, 270, 360, color='red'))
+            self._add_label(30, 50, "c")
+            self._add_label(15, 70, "Notch")
+
+        elif ntyp == -10:  # Through Cracks at Holes (Pin Load + Moment γ)
+            self._draw_plate()
+            for cx in (30, 70):
+                self.ax.add_patch(patches.Circle((cx, 50), 8, fill=False, edgecolor='black'))
+                self.ax.add_patch(patches.Circle((cx, 50), 6, color='gray'))  # pin
+            self.ax.add_patch(patches.Rectangle((38, 49), 8, 2, color='red'))
+            self.ax.add_patch(patches.Rectangle((54, 49), 8, 2, color='red'))
+            self._add_label(50, 30, "Pin Load")
+
+        elif ntyp == -11:  # Periodic Through Cracks at Holes
+            self._draw_plate()
+            for cx in (25, 50, 75):
+                self.ax.add_patch(patches.Circle((cx, 50), 4, fill=False, edgecolor='black'))
+                self.ax.add_patch(patches.Rectangle((cx + 4, 49), 7, 2, color='red'))
+            self._draw_tension_arrows()
+            self._add_label(50, 30, "Periodic spacing")
 
         elif ntyp == -12: # Lap Splice Joint
             # Draw two overlapping plates
@@ -142,6 +253,53 @@ class GeometryCanvas(tk.Frame):
             self._add_label(50, 55, "Rivet")
             # Crack
             self.ax.add_patch(patches.Rectangle((54, 45), 10, 2, color='red'))
+
+        elif ntyp == -13:  # Lap-Splice Joint — Corner Cracks
+            self.ax.add_patch(patches.Rectangle((10, 40), 60, 40, fill=False,
+                                                edgecolor='black', linewidth=1.5))
+            self.ax.add_patch(patches.Rectangle((30, 10), 60, 40, fill=False,
+                                                edgecolor='blue', linestyle='--', linewidth=1.5))
+            self.ax.add_patch(patches.Circle((50, 45), 4, color='black'))
+            self._add_label(50, 60, "Rivet")
+            # Corner crack (quarter ellipse)
+            self.ax.add_patch(patches.Wedge((54, 45), 6, 0, 90, color='red'))
+
+        elif ntyp == -14:  # Surface Crack at Edge Notch Bend
+            # Bend specimen plate
+            self.ax.add_patch(patches.Rectangle((10, 30), 80, 40, fill=False,
+                                                edgecolor='black', linewidth=2))
+            # Edge notch on bottom
+            self.ax.add_patch(patches.Wedge((50, 30), 8, 0, 180, fc='#f0f0f0', ec='none'))
+            self.ax.add_patch(patches.Arc((50, 30), 16, 16, theta1=0, theta2=180,
+                                          color='black', linewidth=2))
+            # Surface crack at notch root
+            self.ax.add_patch(patches.Ellipse((50, 42), 12, 4, color='red'))
+            # Supports + load
+            self.ax.add_patch(patches.Circle((20, 25), 3, color='blue'))
+            self.ax.add_patch(patches.Circle((80, 25), 3, color='blue'))
+            self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
+            self._add_label(50, 50, "2c")
+
+        elif ntyp == -15:  # Through Crack at Edge Notch Bend
+            self.ax.add_patch(patches.Rectangle((10, 30), 80, 40, fill=False,
+                                                edgecolor='black', linewidth=2))
+            self.ax.add_patch(patches.Wedge((50, 30), 8, 0, 180, fc='#f0f0f0', ec='none'))
+            self.ax.add_patch(patches.Arc((50, 30), 16, 16, theta1=0, theta2=180,
+                                          color='black', linewidth=2))
+            # Through crack from notch root (vertical strip)
+            self.ax.add_patch(patches.Rectangle((49, 38), 2, 18, color='red'))
+            self.ax.add_patch(patches.Circle((20, 25), 3, color='blue'))
+            self.ax.add_patch(patches.Circle((80, 25), 3, color='blue'))
+            self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
+            self._add_label(56, 48, "c")
+
+        elif ntyp == -99:  # User-Defined Crack at Hole/Notch
+            self.ax.add_patch(patches.Rectangle((20, 30), 60, 40, fill=False,
+                                                edgecolor='gray', linestyle='--'))
+            self.ax.add_patch(patches.Circle((50, 50), 6, fill=False, edgecolor='gray',
+                                             linestyle='--'))
+            self.ax.text(50, 18, "User-Defined Crack at Hole/Notch\n(fct vs crk/w table)",
+                         ha='center', fontsize=9, fontstyle='italic')
 
         else:
             self.ax.text(50, 50, f"Schematic N/A\n(Type {ntyp})", ha='center', fontsize=10)
@@ -164,6 +322,26 @@ class GeometryCanvas(tk.Frame):
     def _add_label(self, x, y, text, color='blue'):
         """Helper to add text labels."""
         self.ax.text(x, y, text, ha='center', fontsize=9, color=color, fontweight='bold')
+
+    def _draw_edge_notch(self, side='left', y=50, radius=8):
+        """
+        Draw a semi-circular edge notch on the plate.
+        Bulges into the plate from the named side. Uses canvas-color fill to
+        'erase' the plate edge inside the notch, then draws the curved arc.
+        """
+        if side == 'left':
+            x = 10
+            theta1, theta2 = 270, 90  # right half of circle (bulges into plate)
+        elif side == 'right':
+            x = 90
+            theta1, theta2 = 90, 270  # left half (bulges into plate)
+        else:
+            return
+        self.ax.add_patch(patches.Wedge((x, y), radius, theta1, theta2,
+                                        fc='#f0f0f0', ec='none'))
+        self.ax.add_patch(patches.Arc((x, y), 2 * radius, 2 * radius,
+                                      theta1=theta1, theta2=theta2,
+                                      color='black', linewidth=2))
 
     # --- EXPORT ACTIONS ---
 

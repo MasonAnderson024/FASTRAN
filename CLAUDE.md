@@ -31,12 +31,13 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 ## Current State (as of 2026-04-30)
 
 ### Latest Session Summary (2026-04-30)
-Cleared the last two Next Steps from the prior backlog and tidied up tracked cache files:
+Cleared the last two Next Steps from the prior backlog, tidied up tracked cache files, and added image export for the specimen schematic:
 
 | Commit | Title |
 |---|---|
 | `0c222e4` | Untrack `__pycache__` files (already in .gitignore) |
 | `5ae47c8` | LFAST/LTYP/KCONST → comboboxes; add IRATE=2 option |
+| `a784d87` | Save Image / Copy buttons on the specimen schematic |
 
 The combobox upgrade also added an `int_prefix()` helper in `parsers.py` and a `label_for_int()` helper + new OPTIONS lists in `config.py`, mirroring the NTYP/NFOPT convention. `_load_gui_state` migrates older bare-integer state values into the new full-label form on load.
 
@@ -81,6 +82,7 @@ The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing pop
 - **Pre-run validation**: `_validate_run_inputs` returns `(errors, warnings)`. Errors block (Cf≤Ci, Cn>Ci, unparseable critical fields, missing spectrum file). Warnings prompt Yes/No (Smax ≥ flow stress, non-positive W/B/E)
 - **LFAST / LTYP / KCONST comboboxes**: descriptive `N: label` dropdowns with auto-generated `*_OPTIONS` lists; parser strips integer prefix on write, importer remaps integers to labels on read; legacy bare-integer state migrates on project load
 - **IRATE=2 option**: now selectable from the combobox alongside `1` and `4`; backend was already capable
+- **Specimen-schematic image export**: `widgets.GeometryCanvas` gained Save Image... (PNG/PDF/SVG via `figure.savefig`) and Copy (Windows clipboard via Pillow + `ctypes.user32`). Default save filename uses the current NTYP.
 
 ### Next Steps
 The original backlog from CLAUDE.md is now empty. Open ideas if appetite appears:

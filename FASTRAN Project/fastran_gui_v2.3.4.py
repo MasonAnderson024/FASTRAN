@@ -207,9 +207,28 @@ class FastranGui(tk.Tk):
         self.special_frame = ttk.LabelFrame(left, text="Special Requirements", padding=10)
         self.special_frame.pack(fill='x', pady=10)
 
+        # Live dimension readout (must pack before the canvas so it claims
+        # the bottom strip; canvas then expand-fills the remainder).
+        self.dim_readout = ttk.Label(right, font=('Consolas', 9), foreground='#444',
+                                     anchor='w')
+        self.dim_readout.pack(side='bottom', fill='x', padx=4, pady=(4, 2))
+        for k in ('W', 'B', 'CI', 'CN', 'CF'):
+            self.vars[k].trace_add('write', self._update_dim_readout)
+        self._update_dim_readout()
+
         # Visualization Widget
         self.geo_canvas = widgets.GeometryCanvas(right)
         self.geo_canvas.pack(fill='both', expand=True)
+
+    def _update_dim_readout(self, *_):
+        parts = []
+        for key, label in (('W', 'W'), ('B', 'T'), ('CI', 'Ci'),
+                           ('CN', 'Cn'), ('CF', 'Cf')):
+            try:
+                parts.append(f"{label}={float(self.vars[key].get()):g}")
+            except (ValueError, TypeError, KeyError):
+                parts.append(f"{label}=?")
+        self.dim_readout.config(text="   ".join(parts))
 
     def _on_ntyp_change(self, event=None):
         """Update schematic and special fields."""

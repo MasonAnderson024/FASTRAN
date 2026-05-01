@@ -10,8 +10,9 @@ Responsibilities:
 2. ToolTip: Provides hover-over help text for complex input fields.
 """
 
+import os
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import matplotlib
 import matplotlib.patches as patches
 from matplotlib.figure import Figure
@@ -30,16 +31,24 @@ class GeometryCanvas(tk.Frame):
     """
     def __init__(self, parent, width=300, height=200):
         super().__init__(parent, borderwidth=1, relief="sunken")
-        
+
+        self.current_ntyp = None
+
         # Create small figure for schematic
         self.figure = Figure(figsize=(3, 2), dpi=100)
         self.figure.patch.set_facecolor('#f0f0f0') # Match default GUI grey
-        
+
         self.ax = self.figure.add_subplot(111)
         self.ax.set_axis_off() # We don't want graph coordinates, just the drawing
-        
+
+        # Button row sits at the bottom; canvas takes the remaining space.
+        btn_row = ttk.Frame(self)
+        btn_row.pack(side='bottom', fill='x', padx=4, pady=(2, 4))
+        ttk.Button(btn_row, text="Save Image...", command=self.save_image).pack(side='left', padx=2)
+        ttk.Button(btn_row, text="Copy", command=self.copy_to_clipboard).pack(side='left', padx=2)
+
         self.canvas = FigureCanvasTkAgg(self.figure, master=self)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.canvas.get_tk_widget().pack(side='top', fill=tk.BOTH, expand=True)
 
     def update_diagram(self, ntyp_id):
         """
@@ -58,8 +67,10 @@ class GeometryCanvas(tk.Frame):
         try:
             ntyp = int(ntyp_id)
         except (ValueError, TypeError):
+            self.current_ntyp = None
             self.canvas.draw()
             return
+        self.current_ntyp = ntyp
 
         # --- DRAWING LOGIC ---
         
@@ -153,6 +164,89 @@ class GeometryCanvas(tk.Frame):
     def _add_label(self, x, y, text, color='blue'):
         """Helper to add text labels."""
         self.ax.text(x, y, text, ha='center', fontsize=9, color=color, fontweight='bold')
+
+    # --- EXPORT ACTIONS ---
+
+    def _default_filename(self, ext):
+        if self.current_ntyp is not None:
+            stem = f"specimen_NTYP{self.current_ntyp}"
+        else:
+            stem = "specimen"
+        return f"{stem}.{ext}"
+
+    def save_image(self):
+        """Prompt the user for a path and save the schematic at high DPI."""
+        path = filedialog.asksaveasfilename(
+            title="Save Specimen Schematic",
+            defaultextension=".png",
+            initialfile=self._default_filename("png"),
+            filetypes=[("PNG Image", "*.png"),
+                       ("PDF Document", "*.pdf"),
+                       ("SVG Vector", "*.svg"),
+                       ("All Files", "*.*")])
+        if not path:
+            return
+        try:
+            self.figure.savefig(path, dpi=200,
+                                facecolor=self.figure.get_facecolor(),
+                                bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Could not save image:\n{e}")
+
+    def copy_to_clipboard(self):
+        """Copy the current schematic to the system clipboard as an image."""
+        if os.name != 'nt':
+            messagebox.showinfo(
+                "Copy Image",
+                "Image clipboard copy is currently Windows-only.\nUse Save Image... instead.")
+            return
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Copy Image",
+                "Pillow (PIL) is required for clipboard copy.\nUse Save Image... instead.")
+            return
+
+        from io import BytesIO
+        import ctypes
+
+        # Render figure to PNG bytes, reload through PIL, re-encode as BMP.
+        # The Windows CF_DIB clipboard format expects the BMP without its
+        # 14-byte BITMAPFILEHEADER prefix.
+        buf = BytesIO()
+        self.figure.savefig(buf, format='png', dpi=200,
+                            facecolor=self.figure.get_facecolor(),
+                            bbox_inches='tight')
+        buf.seek(0)
+        image = Image.open(buf).convert('RGB')
+
+        bmp_buf = BytesIO()
+        image.save(bmp_buf, 'BMP')
+        dib = bmp_buf.getvalue()[14:]
+
+        CF_DIB = 8
+        GMEM_MOVEABLE = 0x0002
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        try:
+            if not user32.OpenClipboard(0):
+                raise OSError("Could not open clipboard")
+            try:
+                user32.EmptyClipboard()
+                h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(dib))
+                if not h_mem:
+                    raise OSError("GlobalAlloc failed")
+                p_mem = kernel32.GlobalLock(h_mem)
+                ctypes.memmove(p_mem, dib, len(dib))
+                kernel32.GlobalUnlock(h_mem)
+                if not user32.SetClipboardData(CF_DIB, h_mem):
+                    raise OSError("SetClipboardData failed")
+            finally:
+                user32.CloseClipboard()
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not copy to clipboard:\n{e}")
 
 
 # ------------------------------------------------------------------

@@ -13,6 +13,7 @@ Responsibilities:
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from contextlib import contextmanager
 import matplotlib
 import matplotlib.patches as patches
 from matplotlib.figure import Figure
@@ -34,10 +35,14 @@ class GeometryCanvas(tk.Frame):
 
         self.current_ntyp = None
 
+        # View-toggle and export-target state
+        self.show_plan    = tk.BooleanVar(value=True)
+        self.show_section = tk.BooleanVar(value=True)
+        self.export_target = tk.StringVar(value="Both")
+
         # Wider figure: left = plan view, right = cross-section view
         self.figure = Figure(figsize=(6, 2), dpi=100)
         self.figure.patch.set_facecolor('#f0f0f0')
-        self.figure.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.02, wspace=0.12)
 
         self.ax = self.figure.add_subplot(121)
         self.ax.set_axis_off()
@@ -48,11 +53,29 @@ class GeometryCanvas(tk.Frame):
         # Button row sits at the bottom; canvas takes the remaining space.
         btn_row = ttk.Frame(self)
         btn_row.pack(side='bottom', fill='x', padx=4, pady=(2, 4))
+
         ttk.Button(btn_row, text="Save Image...", command=self.save_image).pack(side='left', padx=2)
-        ttk.Button(btn_row, text="Copy", command=self.copy_to_clipboard).pack(side='left', padx=2)
+        ttk.Button(btn_row, text="Copy",          command=self.copy_to_clipboard).pack(side='left', padx=2)
+
+        ttk.Separator(btn_row, orient='vertical').pack(side='left', fill='y', padx=5)
+
+        ttk.Label(btn_row, text="Show:").pack(side='left')
+        ttk.Checkbutton(btn_row, text="Plan",    variable=self.show_plan,
+                        command=self._update_view_layout).pack(side='left')
+        ttk.Checkbutton(btn_row, text="Section", variable=self.show_section,
+                        command=self._update_view_layout).pack(side='left', padx=(0, 2))
+
+        ttk.Separator(btn_row, orient='vertical').pack(side='left', fill='y', padx=5)
+
+        ttk.Label(btn_row, text="Export:").pack(side='left')
+        ttk.Combobox(btn_row, textvariable=self.export_target, width=9, state='readonly',
+                     values=["Both", "Plan View", "Section A–A"]).pack(side='left', padx=2)
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=self)
         self.canvas.get_tk_widget().pack(side='top', fill=tk.BOTH, expand=True)
+
+        # Set initial axis positions (both visible)
+        self._update_view_layout()
 
     def update_diagram(self, ntyp_id):
         """
@@ -609,17 +632,78 @@ class GeometryCanvas(tk.Frame):
         off_y = -12 if 't' in corner else 12
         self._cs_label(ax, cx + off_x, cy + off_y, "a,c", color='#cc0000', fontsize=7)
 
+    # --- VIEW LAYOUT ---
+
+    # Normalized [left, bottom, width, height] positions for each display mode.
+    _POS_BOTH_PLAN    = [0.02, 0.05, 0.45, 0.84]
+    _POS_BOTH_SECTION = [0.53, 0.05, 0.45, 0.84]
+    _POS_SINGLE       = [0.04, 0.05, 0.92, 0.84]
+
+    def _update_view_layout(self):
+        """Reposition / hide axes based on the Show checkboxes; prevent both hidden."""
+        plan    = self.show_plan.get()
+        section = self.show_section.get()
+
+        # Always keep at least one visible
+        if not plan and not section:
+            self.show_plan.set(True)
+            plan = True
+
+        if plan and section:
+            self.ax.set_position(self._POS_BOTH_PLAN)
+            self.ax_cs.set_position(self._POS_BOTH_SECTION)
+            self.ax.set_visible(True)
+            self.ax_cs.set_visible(True)
+        elif plan:
+            self.ax.set_position(self._POS_SINGLE)
+            self.ax.set_visible(True)
+            self.ax_cs.set_visible(False)
+        else:
+            self.ax_cs.set_position(self._POS_SINGLE)
+            self.ax_cs.set_visible(True)
+            self.ax.set_visible(False)
+
+        self.canvas.draw_idle()
+
+    @contextmanager
+    def _single_view_context(self, target):
+        """
+        Context manager: temporarily reshape the figure to show only *target*
+        ("Plan View" or "Section A–A") at full width, then restore everything.
+        Yields without changes when target == "Both".
+        """
+        if target == "Both":
+            yield
+            return
+
+        ax_show = self.ax    if target == "Plan View" else self.ax_cs
+        ax_hide = self.ax_cs if target == "Plan View" else self.ax
+
+        saved_pos_show = ax_show.get_position().frozen()
+        saved_pos_hide = ax_hide.get_position().frozen()
+        saved_vis      = ax_hide.get_visible()
+
+        ax_hide.set_visible(False)
+        ax_show.set_position(self._POS_SINGLE)
+        try:
+            yield
+        finally:
+            ax_show.set_position(saved_pos_show)
+            ax_hide.set_position(saved_pos_hide)
+            ax_hide.set_visible(saved_vis)
+
     # --- EXPORT ACTIONS ---
 
     def _default_filename(self, ext):
-        if self.current_ntyp is not None:
-            stem = f"specimen_NTYP{self.current_ntyp}"
-        else:
-            stem = "specimen"
+        target = self.export_target.get()
+        suffix = {"Plan View": "_plan", "Section A–A": "_section"}.get(target, "")
+        stem = f"specimen_NTYP{self.current_ntyp}{suffix}" if self.current_ntyp is not None \
+               else f"specimen{suffix}"
         return f"{stem}.{ext}"
 
     def save_image(self):
         """Prompt the user for a path and save the schematic at high DPI."""
+        target = self.export_target.get()
         path = filedialog.asksaveasfilename(
             title="Save Specimen Schematic",
             defaultextension=".png",
@@ -631,9 +715,10 @@ class GeometryCanvas(tk.Frame):
         if not path:
             return
         try:
-            self.figure.savefig(path, dpi=200,
-                                facecolor=self.figure.get_facecolor(),
-                                bbox_inches='tight')
+            with self._single_view_context(target):
+                self.figure.savefig(path, dpi=200,
+                                    facecolor=self.figure.get_facecolor(),
+                                    bbox_inches='tight')
         except Exception as e:
             messagebox.showerror("Save Error", f"Could not save image:\n{e}")
 
@@ -658,10 +743,16 @@ class GeometryCanvas(tk.Frame):
         # Render figure to PNG bytes, reload through PIL, re-encode as BMP.
         # The Windows CF_DIB clipboard format expects the BMP without its
         # 14-byte BITMAPFILEHEADER prefix.
+        target = self.export_target.get()
         buf = BytesIO()
-        self.figure.savefig(buf, format='png', dpi=200,
-                            facecolor=self.figure.get_facecolor(),
-                            bbox_inches='tight')
+        try:
+            with self._single_view_context(target):
+                self.figure.savefig(buf, format='png', dpi=200,
+                                    facecolor=self.figure.get_facecolor(),
+                                    bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not render image:\n{e}")
+            return
         buf.seek(0)
         image = Image.open(buf).convert('RGB')
 

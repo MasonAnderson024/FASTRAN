@@ -34,12 +34,16 @@ class GeometryCanvas(tk.Frame):
 
         self.current_ntyp = None
 
-        # Create small figure for schematic
-        self.figure = Figure(figsize=(3, 2), dpi=100)
-        self.figure.patch.set_facecolor('#f0f0f0') # Match default GUI grey
+        # Wider figure: left = plan view, right = cross-section view
+        self.figure = Figure(figsize=(6, 2), dpi=100)
+        self.figure.patch.set_facecolor('#f0f0f0')
+        self.figure.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.02, wspace=0.12)
 
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_axis_off() # We don't want graph coordinates, just the drawing
+        self.ax = self.figure.add_subplot(121)
+        self.ax.set_axis_off()
+
+        self.ax_cs = self.figure.add_subplot(122)
+        self.ax_cs.set_axis_off()
 
         # Button row sits at the bottom; canvas takes the remaining space.
         btn_row = ttk.Frame(self)
@@ -53,17 +57,20 @@ class GeometryCanvas(tk.Frame):
     def update_diagram(self, ntyp_id):
         """
         Clears the canvas and draws the schematic for the given NTYP ID.
-        
+
         Args:
             ntyp_id (int): The FASTRAN geometry code (e.g. 1, 2, 5).
         """
         self.ax.clear()
         self.ax.set_axis_off()
-        
-        # Setup common drawing canvas (0-100 coordinate system)
         self.ax.set_xlim(0, 100)
         self.ax.set_ylim(0, 100)
-        
+
+        self.ax_cs.clear()
+        self.ax_cs.set_axis_off()
+        self.ax_cs.set_xlim(0, 100)
+        self.ax_cs.set_ylim(0, 100)
+
         try:
             ntyp = int(ntyp_id)
         except (ValueError, TypeError):
@@ -71,6 +78,9 @@ class GeometryCanvas(tk.Frame):
             self.canvas.draw()
             return
         self.current_ntyp = ntyp
+
+        self.ax.set_title("Plan View", fontsize=8, pad=2)
+        self.ax_cs.set_title("Section A–A", fontsize=8, pad=2)
 
         # --- DRAWING LOGIC ---
 
@@ -304,6 +314,7 @@ class GeometryCanvas(tk.Frame):
         else:
             self.ax.text(50, 50, f"Schematic N/A\n(Type {ntyp})", ha='center', fontsize=10)
 
+        self._draw_cross_section(ntyp)
         self.canvas.draw()
 
     # --- DRAWING HELPERS ---
@@ -342,6 +353,261 @@ class GeometryCanvas(tk.Frame):
         self.ax.add_patch(patches.Arc((x, y), 2 * radius, 2 * radius,
                                       theta1=theta1, theta2=theta2,
                                       color='black', linewidth=2))
+
+    # --- CROSS-SECTION DRAWING ---
+
+    def _draw_cross_section(self, ntyp):
+        """Draw the through-thickness cross-section view for the right subplot."""
+        ax = self.ax_cs
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 100)
+
+        if ntyp == 0:   # Surface Crack – semi-ellipse from top face
+            self._cs_rect(ax)
+            self._cs_surface_crack(ax, cx=50, face='top')
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 94, "2c", color='red')
+
+        elif ntyp == 1:  # Center Crack Tension – through crack at mid-width
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=50)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 60, 50, "Full\nthick.", color='red', fontsize=7)
+
+        elif ntyp == 2:  # Compact Tension – through crack from left notch
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=50)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 58, 50, "a", color='red')
+
+        elif ntyp == 3:  # Single Edge Crack (Tension) – through crack from left
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=15 + 4)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 35, 50, "a", color='red')
+
+        elif ntyp == 4:  # Single Edge Bend – through crack from bottom
+            self._cs_rect(ax)
+            ax.add_patch(patches.Rectangle((46, 10), 8, 40, color='red'))
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 60, 30, "a", color='red')
+
+        elif ntyp == 5:  # Pressurized Cylinder – radial crack on outer wall
+            # Show longitudinal cross-section: hollow cylinder wall with radial crack
+            ax.add_patch(patches.Rectangle((20, 20), 60, 60, fill=False,
+                                           edgecolor='black', linewidth=2))
+            ax.add_patch(patches.Rectangle((30, 20), 40, 60, fc='#e8e8e8', ec='none'))
+            ax.add_patch(patches.Rectangle((30, 20), 40, 60, fill=False,
+                                           edgecolor='black', linewidth=1, linestyle='--'))
+            # Radial crack from outer surface
+            ax.add_patch(patches.Rectangle((78, 46), 12, 8, color='red'))
+            self._cs_label(ax, 50, 50, "bore", color='#555', fontsize=8)
+            self._cs_label(ax, 93, 50, "a", color='red')
+            self._cs_label(ax, 15, 50, "t", color='#333')
+
+        elif ntyp in (6, 7):  # Corner Crack – quarter ellipse at top-right corner
+            self._cs_rect(ax)
+            self._cs_corner_crack(ax, corner='tr')
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 94, "c", color='red')
+
+        elif ntyp == 8:  # Double Edge Crack – through cracks from both sides
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=19, w=4)
+            self._cs_through_crack(ax, cx=81, w=4)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 30, 50, "a", color='red')
+            self._cs_label(ax, 70, 50, "a", color='red')
+
+        elif ntyp == 99:
+            ax.text(50, 50, "User-Defined\n(no section)", ha='center', va='center',
+                    fontsize=9, fontstyle='italic', color='#888')
+
+        elif ntyp == -1:  # One Corner Crack at Hole – quarter ellipse
+            self._cs_rect(ax)
+            self._cs_corner_crack(ax, corner='tr')
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 94, "c", color='red')
+
+        elif ntyp == -2:  # Two Corner Cracks at Hole – both top corners
+            self._cs_rect(ax)
+            self._cs_corner_crack(ax, corner='tl')
+            self._cs_corner_crack(ax, corner='tr')
+            self._cs_ann_B(ax)
+
+        elif ntyp == -3:  # One Through Crack at Hole
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=72)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 82, 50, "c", color='red')
+
+        elif ntyp == -4:  # Two Through Cracks at Hole
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=37)
+            self._cs_through_crack(ax, cx=63)
+            self._cs_ann_B(ax)
+
+        elif ntyp == -5:  # One Surface Crack on Bore
+            # Show bore wall; crack from inner surface
+            ax.add_patch(patches.Rectangle((20, 10), 60, 80, fill=False,
+                                           edgecolor='black', linewidth=2))
+            # Bore cavity on left
+            ax.add_patch(patches.Rectangle((20, 10), 20, 80, fc='#d0d8e8', ec='none'))
+            ax.plot([40, 40], [10, 90], 'k--', lw=1)
+            # Crack from bore wall into material
+            ax.add_patch(patches.Arc((40, 50), 20, 22, theta1=270, theta2=90,
+                                     color='red', lw=2))
+            ax.plot([40, 40], [39, 61], 'r-', lw=2)
+            self._cs_label(ax, 30, 50, "bore", color='#555', fontsize=7)
+            self._cs_label(ax, 55, 50, "a", color='red')
+            self._cs_ann_B(ax)
+
+        elif ntyp == -6:  # Two Surface Cracks on Bore
+            ax.add_patch(patches.Rectangle((20, 10), 60, 80, fill=False,
+                                           edgecolor='black', linewidth=2))
+            ax.add_patch(patches.Rectangle((20, 10), 20, 80, fc='#d0d8e8', ec='none'))
+            ax.plot([40, 40], [10, 90], 'k--', lw=1)
+            ax.add_patch(patches.Arc((40, 35), 18, 18, theta1=270, theta2=90,
+                                     color='red', lw=2))
+            ax.plot([40, 40], [26, 44], 'r-', lw=2)
+            ax.add_patch(patches.Arc((40, 65), 18, 18, theta1=270, theta2=90,
+                                     color='red', lw=2))
+            ax.plot([40, 40], [56, 74], 'r-', lw=2)
+            self._cs_label(ax, 30, 50, "bore", color='#555', fontsize=7)
+            self._cs_ann_B(ax)
+
+        elif ntyp == -7:  # Surface Crack at Edge Notch – semi-ellipse at notch root
+            self._cs_rect(ax)
+            # Notch on left side
+            ax.add_patch(patches.Wedge((15, 50), 10, 270, 90, fc='#f0f0f0', ec='none'))
+            ax.add_patch(patches.Arc((15, 50), 20, 20, theta1=270, theta2=90,
+                                     color='black', lw=2))
+            # Surface crack from notch root, top face
+            self._cs_surface_crack(ax, cx=50, face='top')
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 94, "2c", color='red')
+
+        elif ntyp == -8:  # Through Crack at Edge Notch
+            self._cs_rect(ax)
+            ax.add_patch(patches.Wedge((15, 50), 10, 270, 90, fc='#f0f0f0', ec='none'))
+            ax.add_patch(patches.Arc((15, 50), 20, 20, theta1=270, theta2=90,
+                                     color='black', lw=2))
+            self._cs_through_crack(ax, cx=28)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 42, 50, "c", color='red')
+
+        elif ntyp == -9:  # Corner Crack at Edge Notch
+            self._cs_rect(ax)
+            ax.add_patch(patches.Wedge((15, 50), 10, 270, 90, fc='#f0f0f0', ec='none'))
+            ax.add_patch(patches.Arc((15, 50), 20, 20, theta1=270, theta2=90,
+                                     color='black', lw=2))
+            self._cs_corner_crack(ax, corner='tr')
+            self._cs_ann_B(ax)
+
+        elif ntyp in (-10, -11):  # Through Cracks at Holes
+            self._cs_rect(ax)
+            self._cs_through_crack(ax, cx=38)
+            self._cs_through_crack(ax, cx=62)
+            self._cs_ann_B(ax)
+
+        elif ntyp == -12:  # Lap Splice – through crack at rivet
+            # Two overlapping sheets
+            ax.add_patch(patches.Rectangle((10, 55), 80, 25, fill=False,
+                                           edgecolor='black', lw=2))
+            ax.add_patch(patches.Rectangle((10, 20), 80, 25, fill=False,
+                                           edgecolor='blue', lw=1.5, linestyle='--'))
+            # Through crack in top sheet from rivet hole
+            ax.add_patch(patches.Rectangle((58, 55), 4, 25, color='red'))
+            self._cs_label(ax, 68, 67, "c", color='red')
+            ax.annotate("", xy=(8, 55), xytext=(8, 80),
+                        arrowprops=dict(arrowstyle='<->', color='#333', lw=1))
+            self._cs_label(ax, 3, 67, "t", color='#333', fontsize=8)
+
+        elif ntyp == -13:  # Lap Splice – corner crack
+            ax.add_patch(patches.Rectangle((10, 55), 80, 25, fill=False,
+                                           edgecolor='black', lw=2))
+            ax.add_patch(patches.Rectangle((10, 20), 80, 25, fill=False,
+                                           edgecolor='blue', lw=1.5, linestyle='--'))
+            ax.add_patch(patches.Wedge((85, 80), 14, 180, 270, color='red', alpha=0.8))
+            self._cs_label(ax, 72, 68, "a,c", color='red', fontsize=7)
+
+        elif ntyp == -14:  # Surface Crack at Edge Notch Bend
+            self._cs_rect(ax)
+            # Notch at bottom center
+            ax.add_patch(patches.Wedge((50, 10), 10, 0, 180, fc='#f0f0f0', ec='none'))
+            ax.add_patch(patches.Arc((50, 10), 20, 20, theta1=0, theta2=180,
+                                     color='black', lw=2))
+            # Surface crack from top face
+            self._cs_surface_crack(ax, cx=50, face='top')
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 94, "2c", color='red')
+
+        elif ntyp == -15:  # Through Crack at Edge Notch Bend
+            self._cs_rect(ax)
+            ax.add_patch(patches.Wedge((50, 10), 10, 0, 180, fc='#f0f0f0', ec='none'))
+            ax.add_patch(patches.Arc((50, 10), 20, 20, theta1=0, theta2=180,
+                                     color='black', lw=2))
+            self._cs_through_crack(ax, cx=50)
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 62, 50, "a", color='red')
+
+        elif ntyp == -99:
+            ax.text(50, 50, "User-Defined\n(no section)", ha='center', va='center',
+                    fontsize=9, fontstyle='italic', color='#888')
+
+        else:
+            ax.text(50, 50, "Section N/A", ha='center', va='center',
+                    fontsize=9, color='#888')
+
+    # --- CROSS-SECTION HELPERS ---
+
+    def _cs_rect(self, ax, x=15, y=10, w=70, h=80):
+        """Draw specimen rectangle in cross-section coordinates."""
+        ax.add_patch(patches.Rectangle((x, y), w, h, fill=False,
+                                       edgecolor='black', linewidth=2))
+
+    def _cs_label(self, ax, x, y, text, color='blue', fontsize=8):
+        ax.text(x, y, text, ha='center', va='center', fontsize=fontsize,
+                color=color, fontweight='bold')
+
+    def _cs_ann_B(self, ax, x=7):
+        """Annotate thickness B with a double-headed arrow on the left."""
+        ax.annotate("", xy=(x, 10), xytext=(x, 90),
+                    arrowprops=dict(arrowstyle='<->', color='#333', lw=1.2))
+        self._cs_label(ax, x - 4, 50, "B", color='#333', fontsize=8)
+
+    def _cs_through_crack(self, ax, cx=50, w=4):
+        """Draw a through-thickness crack (full-height slit)."""
+        ax.add_patch(patches.Rectangle((cx - w / 2, 10), w, 80, color='red'))
+
+    def _cs_surface_crack(self, ax, cx=50, face='top', crack_w=28, crack_h=24):
+        """Draw a semi-elliptical surface crack (depth ~30 % into thickness)."""
+        if face == 'top':
+            cy = 90
+            t1, t2 = 180, 360
+        else:
+            cy = 10
+            t1, t2 = 0, 180
+        ax.add_patch(patches.Arc((cx, cy), crack_w, crack_h,
+                                 theta1=t1, theta2=t2, color='red', lw=2))
+        ax.plot([cx - crack_w / 2, cx + crack_w / 2], [cy, cy], 'r-', lw=2)
+        label_y = cy - crack_h / 2 - 5 if face == 'top' else cy + crack_h / 2 + 5
+        self._cs_label(ax, cx + crack_w / 2 + 8, label_y + (5 if face == 'top' else -5),
+                       "a", color='red')
+
+    def _cs_corner_crack(self, ax, corner='tr', r=20):
+        """Draw a quarter-ellipse corner crack."""
+        cfg = {
+            'tl': (15, 90, 0,   90),
+            'tr': (85, 90, 90,  180),
+            'bl': (15, 10, 270, 360),
+            'br': (85, 10, 180, 270),
+        }
+        cx, cy, t1, t2 = cfg[corner]
+        ax.add_patch(patches.Wedge((cx, cy), r, t1, t2, color='red', alpha=0.75))
+        off_x = 10 if 'l' in corner else -10
+        off_y = -12 if 't' in corner else 12
+        self._cs_label(ax, cx + off_x, cy + off_y, "a,c", color='#cc0000', fontsize=7)
 
     # --- EXPORT ACTIONS ---
 

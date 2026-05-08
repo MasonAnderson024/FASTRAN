@@ -28,9 +28,41 @@ The monolithic `fastran_gui_v2.3.3.py` (4399 lines) was refactored into:
 
 **Archive/** holds all prior monolithic versions (v1 through v2.3.3) for reference.
 
-## Current State (as of 2026-04-30)
+## Current State (as of 2026-05-08)
 
-### Latest Session Summary (2026-04-30)
+### Latest Session Summary (2026-05-08)
+Full DKEFF GUI extension across three commits merged to `main` via PR #1:
+
+| Commit | Title |
+|---|---|
+| `ad4a375` | Fix DKEFF GUI gaps and extend functionality |
+| `a0f3310` | DKEFF: specimen presets, NSOP guidance, and direct .lkpx import |
+| `676d73f` | Fix material data flow bugs and add validation |
+
+**DKEFF gap fixes (`ad4a375`):**
+- `dkeff_exe_path` split into `dkeff13_exe_path` + `dkeff21_exe_path`; `_load_external_config` reads both `dkeff13_path`/`dkeff_path` and `dkeff21_path` from `fastran_gui.cfg`
+- Added `_save_external_config()` and File → **Configure Executable Paths…** dialog with Browse buttons for FASTRAN, dkeff13, dkeff21
+- `_batch_convert_lkpx` implemented on `DkeffWindow` (was called but missing); backed by new `parsers.parse_lkpx_for_batch()` for XML extraction from LK Pro-X `.lkpx` files
+- `6.895` unit conversion factor replaced with `config.KSI_TO_MPA`
+- Pre-run input validation (`_validate_dkeff_inputs`): SYIELD/SULT/E/W/T/ALP must be present and positive; empty table blocks run
+- Raw `.dkout` output viewer panel (scrollable Courier text) appears below the paned window after each run
+- DKEFF section added to `HELP_CONTENT` in `dialogs.py`
+
+**AFMAT / no-geometry workarounds (`a0f3310`):**
+- `config.DKEFF_SPECIMEN_PRESETS`: six standard ASTM E647 geometries (M(T) 3"/4", C(T) 0.5T/1T/2T, ESE(T)) with W, T, ALP
+- "Specimen Preset" combobox + Apply button added to DkeffWindow analysis parameters; fills W/T/ALP from lookup
+- NSOP combobox tooltip explains NSOP=0 is correct for database-sourced data (no crack length available)
+- File → **Import .lkpx Direct to Main Window…**: parses `.lkpx`, shows R-ratio selection, pushes ΔK/da/dN rows straight into `CGR_TABLE` + NTAB — no dkeff run needed
+
+**Material data flow bug fixes (`676d73f`):**
+- `_apply_to_main` and `_import_lkpx_direct` were calling non-existent `self.parent.table_data` / `self.parent._redraw_table()` — fixed to write JSON into `vars['CGR_TABLE']` and call `_update_growth_plot()`
+- `_apply_to_main` now also transfers ALP back to the main window
+- `MaterialManager.allowed_keys` expanded: adds `CGR_TABLE`, per-equation `CGR_TABLE_2/3/4`, all `C1_2…NDKTH_4` variants, `KF`, `M`, `NDKTH`, `NALP`, `NEP` — previously tabular data was silently dropped on material save
+- `_validate_run_inputs`: SYIELD ≥ SULT is now a hard error
+- `_add_eq_entry` now checks `config.TOOLTIPS` (NTAB, NDKTH, KF, M, NEQN all have hover help)
+- NTAB tooltip updated to explicitly warn it overrides Paris law constants when > 0
+
+### Prior Session Summary (2026-04-30)
 Cleared the last two Next Steps from the prior backlog, tidied up tracked cache files, and added image export for the specimen schematic:
 
 | Commit | Title |
@@ -38,19 +70,16 @@ Cleared the last two Next Steps from the prior backlog, tidied up tracked cache 
 | `0c222e4` | Untrack `__pycache__` files (already in .gitignore) |
 | `5ae47c8` | LFAST/LTYP/KCONST → comboboxes; add IRATE=2 option |
 | `a784d87` | Save Image / Copy buttons on the specimen schematic |
-
-The combobox upgrade also added an `int_prefix()` helper in `parsers.py` and a `label_for_int()` helper + new OPTIONS lists in `config.py`, mirroring the NTYP/NFOPT convention. `_load_gui_state` migrates older bare-integer state values into the new full-label form on load.
+| `446d106` | Add cross-section view to GeometryCanvas alongside plan view |
+| `0ddac60` | Add view-toggle checkboxes and per-view export target to GeometryCanvas |
 
 ### Prior Session Summary (2026-04-29)
-Three commits landed on `dev` and were fast-forward merged into `main`:
 
 | Commit | Title |
 |---|---|
 | `052f786` | Show ProgressWindow during FASTRAN runs |
 | `1340f12` | Per-equation crack-growth rate table editor (Section 7b) |
 | `58b12ba` | Pre-run validation hooks before `run_analysis` |
-
-The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing populated `CGR_TABLE`, so even single-equation tables were writing zero rows.
 
 ### Prior Session Summary (2026-04-28)
 
@@ -61,39 +90,29 @@ The crack-growth-table commit also fixed a quietly-broken eq-1 case: nothing pop
 | `57eaa3b` | Implement IRATE=4 multi-equation crack-growth panel |
 | `93828dc` | Expose Section 9/10/11/16 input fields in GUI |
 | `b0589ca` | Port HelpWindow and ProgressWindow to dialogs.py |
-| `58be3c9` / `e511749` | CLAUDE.md updates |
 
 ### Done
 - Full module split complete; all 15 modules present and syntactically correct
-- **`config.py` fully corrected** per FASTRAN 5.4/5.78f User Guide:
-  - `NTYP_DATA`: 26 entries covering all valid NTYP codes (0–8, 99, -1 through -15, -99) with correct names and special-input lists
-  - `NFOPT_DATA`: All 11 options (0–10) with correct names and invert/clip labels; NFOPT 6 and 7 added
-  - `FAILURE_MODES`: Correct NFCODE 0–6 descriptions from the spec
-  - `DEFAULT_VALUES`: ~96 keys including all new FASTRAN parameters (LFAST, KCONST, NS, LTYP, NTCMAX, T, HN, RAD, RADF, NDKE, LSTEP, NRC, DVALUE, GAMMA, XKT, NBCF, etc.)
-  - `LFAST_DATA`, `LTYP_DATA`, `KCONST_DATA` dropdown tables added
-  - `TOOLTIPS`: ~65 entries, C4 tooltip corrected
-- **`parsers.py` rewritten**: `generate_fastran_input()` follows the exact 18-section FASTRAN input file format; verified against real test files
-- **`importers.py` rewritten**: `parse_fastran_input()` follows the 18-section format; correctly parses real test files (iTest14.txt validated)
-- **`editors.py` wired into main GUI**: Tools menu (Spectrum/Block/DkEff); Loading tab gained dynamic Spectrum-File and Block-Loading sub-frames driven by `NFOPT_DATA` flags; block editor persists to `<project>/config/block_loading.json`
-- **IRATE=4 multi-equation panel**: per-equation suffixed vars (`C1_2..NDKTH_4`); `_build_constants_panel` renders `ttk.Notebook` with N tabs (inline panel for IRATE=1); parser/importer use `eq_key()` helper; round-trip verified for all 4 equations
-- **Section 9/10/11/16 input fields exposed**: AI/AN/HN/RAD/RADF on Geometry tab; LTYP/LFAST/NS/KCONST/NTCMAX on Loading tab (Section 10); NRC/DVALUE/NCYCLE1/NCYCLE2 on Loading tab (Section 16); NIPT/NPRT/LSTEP/NDKE/DCPR on Crack Growth tab (Section 9). `_add_entry` falls back to `config.TOOLTIPS` for automatic contextual help.
-- **`dialogs.py` ported from v2.3.3**: `HelpWindow` (Ctrl+F search, find-next, wrap prompt) wired to a Help menu via `_show_help` singleton; `ProgressWindow` now opens during FASTRAN runs (modal, closes on success/error)
-- **Per-equation Section 7b crack-growth tables**: `editors.CrackGrowthTableDialog` opens from each equation tab via "Edit Table…"; data stored as JSON in `CGR_TABLE` / `CGR_TABLE_2..4` StringVars; parser writes rows for all eqs; importer captures rows (round-trip verified)
-- **Pre-run validation**: `_validate_run_inputs` returns `(errors, warnings)`. Errors block (Cf≤Ci, Cn>Ci, unparseable critical fields, missing spectrum file). Warnings prompt Yes/No (Smax ≥ flow stress, non-positive W/B/E)
-- **LFAST / LTYP / KCONST comboboxes**: descriptive `N: label` dropdowns with auto-generated `*_OPTIONS` lists; parser strips integer prefix on write, importer remaps integers to labels on read; legacy bare-integer state migrates on project load
-- **IRATE=2 option**: now selectable from the combobox alongside `1` and `4`; backend was already capable
-- **Specimen-schematic image export**: `widgets.GeometryCanvas` gained Save Image... (PNG/PDF/SVG via `figure.savefig`) and Copy (Windows clipboard via Pillow + `ctypes.user32`). Default save filename uses the current NTYP.
+- **`config.py`** fully corrected per FASTRAN 5.4/5.78f spec; `KSI_TO_MPA` and `DKEFF_SPECIMEN_PRESETS` added; TOOLTIPS covers ~70 entries including NTAB/NDKTH/KF/M
+- **`parsers.py`**: `generate_fastran_input()` follows exact 18-section format; `parse_lkpx_for_batch()` extracts multi-R-ratio data from LK Pro-X XML files
+- **`importers.py`**: `parse_fastran_input()` follows 18-section format; round-trip verified
+- **`editors.py`**: full DkeffWindow with version selection, specimen presets, pre-run validation, output viewer, batch `.lkpx` conversion, direct `.lkpx` import; `_apply_to_main` correctly uses `CGR_TABLE` JSON StringVar; `BatchInputDialog`, `DatasetSelectionDialog`, `CrackGrowthTableDialog`
+- **`materials.py`**: `MaterialManager.allowed_keys` covers all material data including per-equation CGR tables
+- **`dialogs.py`**: `HelpWindow` with Ctrl+F search; `ProgressWindow`; full DKEFF workflow section in `HELP_CONTENT`
+- **`fastran_gui_v2.3.4.py`**: Configure Executable Paths dialog; `_validate_run_inputs` covers Cf≤Ci, Cn>Ci, SYIELD≥SULT, flow stress, spectrum file presence; `_add_eq_entry` shows TOOLTIPS hover help; LFAST/LTYP/KCONST as comboboxes
+- **`widgets.py`**: `GeometryCanvas` with plan + cross-section views, view-toggle checkboxes, Save Image / Copy buttons
 
 ### Next Steps
-The original backlog from CLAUDE.md is now empty. Open ideas if appetite appears:
 
-- **Material-library integration polish.** The Material tab has Load/Save buttons but the `MaterialManager` JSON layout could benefit from versioning, plus a way to surface "current material file" status in the UI.
-- **Output viewer.** `parsers.read_fastran_output` exists and `exporters.export_to_csv` works, but there's no in-app way to inspect a `.fou` directly — currently the only flow is "open output folder" or "compare runs." A simple read-only `.fou` viewer in `dialogs.py` would close that gap.
-- **Validation: extend coverage.** `_validate_run_inputs` covers the obvious foot-guns. Worth considering: NTYP-specific special-input checks (e.g., RIVETS=0 for NTYP=-12,-13), IRATE>1 with eq>1 constants left at defaults (warning), DKth (`C5`) > 0 sanity if NTAB tables aren't in use.
-- **Tests.** No automated test suite exists; round-trips were verified by ad-hoc smoke scripts. A small `pytest` module covering parser/importer round-trips would lock in the format guarantees.
+- **`.fou` output viewer.** `parsers.read_fastran_output` and `exporters.export_to_csv` exist, but there is no in-app way to read a `.fou` directly. A read-only viewer in `dialogs.py` (like the dkeff output panel but for FASTRAN output) would close that gap.
+- **Validation: extend coverage.** Worth adding: NTYP-specific special-input checks (e.g., RIVETS=0 for NTYP=-12,-13), warning when IRATE>1 and eq>1 constants are still at defaults, C5 (DKth) > 0 sanity check when NTAB=0.
+- **Material library versioning.** `MaterialManager` JSON has no version field; a `"version": 1` key would guard against silent failures if the schema changes.
+- **Tests.** No automated test suite exists. A small `pytest` module covering parser/importer round-trips and the `parse_lkpx_for_batch` XML extraction would lock in format guarantees.
 
-### Known Convention
-LFAST/LTYP/KCONST are exposed as plain Entry widgets, not dropdowns. Keeps parser/importer simple — they read the var as a raw integer string. Upgrading these to comboboxes (Next Step #4) would require a `:`-prefix split for normalization, matching the existing NTYP/NFOPT convention (`int(s.split(':')[0])`).
+### Known Conventions
+- **LFAST/LTYP/KCONST** use `N: label` comboboxes (same convention as NTYP/NFOPT). Parser strips the integer prefix on write (`int_prefix()`); importer remaps bare integers to full labels on read (`label_for_int()`); `_load_gui_state` migrates old bare-integer project saves automatically.
+- **CGR_TABLE / CGR_TABLE_2..4** store per-equation tabular data as JSON strings in `tk.StringVar`. Any code that reads or writes them must use `json.loads` / `json.dumps`. Never store raw Python lists on ad-hoc parent attributes — the correct path is `vars['CGR_TABLE'].set(json.dumps(rows))` + `vars['NTAB'].set(str(len(rows)))`.
+- **DkeffWindow** accesses the main GUI as `self.parent` and must only write to `self.parent.vars[...]` (StringVars). After pushing data, call `self.parent._update_growth_plot()` to refresh the Paris law preview.
 
 ## How to Run
 ```

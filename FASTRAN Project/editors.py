@@ -929,6 +929,8 @@ class DkeffWindow(tk.Toplevel):
         menubar.add_cascade(label="File", menu=fm)
         fm.add_command(label="Batch Convert .lkpx File...",
                        command=self._batch_convert_lkpx)
+        fm.add_command(label="Import .lkpx Direct to Main Window...",
+                       command=self._import_lkpx_direct)
         fm.add_separator()
         fm.add_command(label="Load dkeff Input File...", command=self._load_dkeff_input_file)
         fm.add_separator()
@@ -985,6 +987,11 @@ class DkeffWindow(tk.Toplevel):
             analysis_lf, textvariable=self.nsop_var,
             state='readonly', values=list(self.nsop_map.keys()))
         self.nsop_combo.grid(row=3, column=1, sticky='ew', padx=5)
+        widgets.ToolTip(self.nsop_combo,
+            "NSOP=0 (Calculate c): dkeff computes crack length internally — "
+            "use this when specimen geometry is unknown (e.g. AFMAT/database data).\n"
+            "NSOP=1 (Input c): you supply measured crack length alongside ΔK and da/dN.\n"
+            "NSOP=2 (Input So/Smax): supply crack-opening-stress ratio instead of c.")
 
         self.kmax_lbl = ttk.Label(analysis_lf, text="Kmax:")
         self.kmax_lbl.grid(row=4, column=0, sticky='w')
@@ -1018,6 +1025,18 @@ class DkeffWindow(tk.Toplevel):
             analysis_lf, state='readonly', values=list(self.lunit_map.keys()))
         self.lunit_combo.current(0)
         self.lunit_combo.grid(row=10, column=1, sticky='ew', padx=5)
+
+        ttk.Separator(analysis_lf, orient='horizontal').grid(
+            row=11, column=0, columnspan=2, sticky='ew', pady=(8, 4))
+        ttk.Label(analysis_lf, text="Specimen Preset:").grid(row=12, column=0, sticky='w')
+        preset_frame = ttk.Frame(analysis_lf)
+        preset_frame.grid(row=12, column=1, sticky='ew', padx=5)
+        self.preset_var = tk.StringVar(value="— select preset —")
+        self.preset_combo = ttk.Combobox(
+            preset_frame, textvariable=self.preset_var,
+            state='readonly', values=list(config.DKEFF_SPECIMEN_PRESETS.keys()), width=22)
+        self.preset_combo.pack(side='left', fill='x', expand=True)
+        ttk.Button(preset_frame, text="Apply", command=self._apply_preset).pack(side='left', padx=(4, 0))
 
         tbl_container = ttk.Frame(paned, padding="5")
         paned.add(tbl_container, weight=3)
@@ -1077,6 +1096,16 @@ class DkeffWindow(tk.Toplevel):
             ctrl, text="Apply to Main Window", command=self._apply_to_main, state='disabled')
         self.apply_button.pack(side='left', padx=5)
         ttk.Button(ctrl, text="Close", command=self.destroy).pack(side='right')
+
+    def _apply_preset(self):
+        preset = config.DKEFF_SPECIMEN_PRESETS.get(self.preset_var.get())
+        if preset is None:
+            return
+        for widget, key in ((self.w_entry, "W"), (self.t_entry, "T"), (self.alp_entry, "ALP")):
+            widget.delete(0, tk.END)
+            widget.insert(0, preset[key])
+        self.status_label.config(
+            text=f"Preset applied: W={preset['W']} mm, T={preset['T']} mm, ALP={preset['ALP']}")
 
     def _update_test_type_widgets(self, *args):
         is_kmax = (self.test_type_var.get() == "Kmax test")
@@ -1467,6 +1496,101 @@ class DkeffWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Write Error",
                                  f"Could not write output file:\n{e}", parent=self)
+
+    def _import_lkpx_direct(self):
+        """
+        Bypass dkeff entirely: parse an .lkpx file and copy one R-ratio's
+        ΔK / da/dN data straight into the main window's crack-growth table.
+        Also imports material properties (SYIELD, SULT, E, MAT) from the file.
+
+        Use this when the .lkpx data is already on a ΔKeff basis (as AFMAT
+        database data typically is) and no closure correction is needed.
+        """
+        lkpx_path = filedialog.askopenfilename(
+            title="Select .lkpx File to Import Directly",
+            filetypes=(("LK Pro-X Material File", "*.lkpx"), ("All Files", "*.*")),
+            parent=self)
+        if not lkpx_path:
+            return
+
+        try:
+            mat_props, datasets = parsers.parse_lkpx_for_batch(lkpx_path)
+        except Exception as e:
+            messagebox.showerror("Parse Error",
+                                 f"Could not read .lkpx file:\n{e}", parent=self)
+            return
+
+        r_ratios = sorted(datasets.keys(), key=float)
+        if not r_ratios:
+            messagebox.showerror("Empty File",
+                                 "No R-ratio datasets found in the file.", parent=self)
+            return
+
+        # Let the user choose which R-ratio to import
+        selected_idx = 0
+        if len(r_ratios) > 1:
+            dlg = DatasetSelectionDialog(
+                self, [f"R = {r}" for r in r_ratios])
+            if dlg.result_index is None:
+                return
+            selected_idx = dlg.result_index
+
+        r_key = r_ratios[selected_idx]
+        raw_rows = datasets[r_key]
+        if not raw_rows:
+            messagebox.showerror("Empty Dataset",
+                                 f"No data rows found for R = {r_key}.", parent=self)
+            return
+
+        # Format to match main GUI table_data: [[dk_str, dadn_str], ...]
+        table_rows = []
+        for dk, dadn in raw_rows:
+            try:
+                table_rows.append([f"{float(dk):.4f}", f"{float(dadn):.4E}"])
+            except ValueError:
+                continue
+
+        if not table_rows:
+            messagebox.showerror("Data Error",
+                                 "Could not parse numeric values from the dataset.", parent=self)
+            return
+
+        # Apply material properties
+        try:
+            syield = float(mat_props.get('SYIELD', '0'))
+            sult   = float(mat_props.get('SULT',   '0'))
+            e_mod  = float(mat_props.get('E',       '0'))
+        except ValueError:
+            syield = sult = e_mod = 0.0
+
+        lunit_code = self.lunit_map[self.lunit_combo.get()]
+        factor = config.KSI_TO_MPA
+        if lunit_code == '1':
+            syield *= factor; sult *= factor; e_mod *= factor
+        elif lunit_code == '2':
+            syield /= factor; sult /= factor; e_mod /= factor
+
+        if syield > 0:
+            self.parent.vars['SYIELD'].set(f"{syield:.1f}")
+        if sult > 0:
+            self.parent.vars['SULT'].set(f"{sult:.1f}")
+        if e_mod > 0:
+            self.parent.vars['E'].set(f"{e_mod:.1f}")
+        self.parent.vars['MAT'].set(
+            os.path.splitext(os.path.basename(lkpx_path))[0])
+
+        # Push data into main window crack-growth table
+        self.parent.table_data = table_rows
+        self.parent.vars['NTAB'].set(str(len(table_rows)))
+        self.parent._redraw_table()
+
+        messagebox.showinfo(
+            "Import Complete",
+            f"Imported {len(table_rows)} data points from R = {r_key} directly into "
+            f"the main window crack-growth table.\n\n"
+            f"Material: {os.path.basename(lkpx_path)}\n"
+            f"No dkeff run was performed — data is assumed to be on the ΔKeff basis.",
+            parent=self)
 
     def _apply_to_main(self):
         if not self.processed_data:

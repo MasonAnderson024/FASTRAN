@@ -13,6 +13,21 @@ and failure mode descriptions. Based on FASTRAN Version 5.4/5.78f User Guide.
 KSI_TO_MPA = 6.895  # multiply ksi → MPa; divide MPa → ksi
 
 # ------------------------------
+# DKEFF SPECIMEN PRESETS
+# Standard ASTM E647 specimen dimensions for use when lab geometry is unknown.
+# W and T are in mm; ALP is the constraint factor (1.0=plane stress, ~3.0=plane strain).
+# ------------------------------
+DKEFF_SPECIMEN_PRESETS = {
+    "— select preset —": None,
+    "M(T) 3-inch  (ASTM E647)": {"W": "76.2",  "T": "6.35",  "ALP": "1.0"},
+    "M(T) 4-inch  (ASTM E647)": {"W": "101.6", "T": "6.35",  "ALP": "1.0"},
+    "C(T) 0.5T    (ASTM E647)": {"W": "25.4",  "T": "6.35",  "ALP": "2.5"},
+    "C(T) 1T      (ASTM E647)": {"W": "50.8",  "T": "12.7",  "ALP": "2.5"},
+    "C(T) 2T      (ASTM E647)": {"W": "101.6", "T": "25.4",  "ALP": "2.5"},
+    "ESE(T) std   (ASTM E647)": {"W": "50.8",  "T": "6.35",  "ALP": "2.0"},
+}
+
+# ------------------------------
 # DEFAULT VALUES
 # ------------------------------
 DEFAULT_VALUES = {

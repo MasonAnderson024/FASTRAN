@@ -324,7 +324,7 @@ TOOLTIPS = {
     'C7':      'Power on threshold term (controls sharpness of threshold knee).',
     'KF':      'Elastic-plastic fracture toughness Kf. Used with m to compute KIe.',
     'M':       'Fracture toughness parameter. 0=brittle (LEFM), 1=fully ductile.',
-    'NTAB':    'Number of tabular crack-growth data points. 0=use Paris equation.',
+    'NTAB':    'Number of tabular ΔKeff / da/dN data points (set via "Edit Table...").\n0 = use Paris law constants (C1–C7).\n>0 = tabular data overrides C1–C7 for this equation.',
     'NDKTH':   '0=table dc/dN vs ΔKeff. 1=FASTRAN tabular form. 2=NASGRO tabular form.',
     'NEQN':    '0=FASTRAN equation. 1=NASGRO equation.',
     'LTYP':    '0=Remote tension (S). 1=Remote bending (Sb). 2=Combined tension+bending (S and γ). Applies to NTYP 0, 2, 7, -1, -2.',

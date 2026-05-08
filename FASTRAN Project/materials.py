@@ -44,14 +44,18 @@ class MaterialManager:
         filename = f"{safe_name.replace(' ', '_')}.json"
         filepath = os.path.join(self.materials_dir, filename)
         
-        # Filter: We only want to save relevant material keys, not the whole GUI state.
-        # This list matches the keys defined in config.py related to materials.
-        allowed_keys = {
+        # Filter: save all material-relevant keys but not geometry/loading/output state.
+        _base = {
             'MAT', 'SYIELD', 'SULT', 'E', 'ETA', 'ALP', 'BETAT', 'BETAW',
-            'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7',
-            'IRATE', 'NTAB', 'KTAB', 'NGC', 'NEQN'
+            'NALP', 'NEP',
+            'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'KF', 'M',
+            'IRATE', 'NTAB', 'NDKTH', 'NEQN', 'NGC', 'CRKNGC',
+            'CGR_TABLE',
         }
-        
+        _per_eq_keys = {'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7',
+                        'KF', 'M', 'NEQN', 'NTAB', 'NDKTH', 'CGR_TABLE'}
+        allowed_keys = _base | {f"{k}_{i}" for k in _per_eq_keys for i in range(2, 5)}
+
         clean_data = {k: v for k, v in properties_dict.items() if k in allowed_keys}
         
         # Ensure the Name field matches the file

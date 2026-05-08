@@ -497,8 +497,11 @@ class FastranGui(tk.Tk):
 
     def _add_eq_entry(self, parent, label, key, eq_idx, r, c):
         ttk.Label(parent, text=label).grid(row=r, column=c*2, sticky='e', padx=5, pady=5)
-        ttk.Entry(parent, textvariable=self._var_for(key, eq_idx), width=12).grid(
-            row=r, column=c*2+1, sticky='w', padx=5)
+        e = ttk.Entry(parent, textvariable=self._var_for(key, eq_idx), width=12)
+        e.grid(row=r, column=c*2+1, sticky='w', padx=5)
+        tip = config.TOOLTIPS.get(key)
+        if tip:
+            widgets.ToolTip(e, tip)
 
     def _build_constants_panel(self):
         """Build (or rebuild) the IRATE-driven Notebook of equation panels."""
@@ -709,8 +712,13 @@ class FastranGui(tk.Tk):
             elif v <= 0:
                 warnings.append(f"{label} ({key}) is non-positive: {v}")
 
-        # Flow-stress check (Smax must stay below (SYIELD+SULT)/2 per FASTRAN docs)
+        # SYIELD must be less than SULT (physically required)
         sy, su, smax = num('SYIELD'), num('SULT'), num('SMAX')
+        if sy is not None and su is not None and sy > 0 and su > 0 and sy >= su:
+            errors.append(
+                f"Yield stress (SYIELD={sy}) must be less than ultimate strength (SULT={su}).")
+
+        # Flow-stress check (Smax must stay below (SYIELD+SULT)/2 per FASTRAN docs)
         if sy is not None and su is not None and sy > 0 and su > 0 and smax is not None:
             sflow = (sy + su) / 2.0
             if smax >= sflow:

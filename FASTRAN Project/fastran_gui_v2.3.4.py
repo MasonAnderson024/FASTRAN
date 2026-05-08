@@ -231,26 +231,41 @@ class FastranGui(tk.Tk):
         self.dim_readout.config(text="   ".join(parts))
 
     def _on_ntyp_change(self, event=None):
-        """Update schematic and special fields."""
+        """Update schematic and special fields (also called when LTYP changes)."""
         try:
             ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
             self.geo_canvas.update_diagram(ntyp_id)
-            
+
+            # Current LTYP — needed to decide whether GAMMA appears for NTYP=0/7
+            try:
+                ltyp_id = int(self.vars['LTYP'].get().split(':')[0])
+            except (ValueError, AttributeError, KeyError):
+                ltyp_id = 0
+
             # Reset special frame
             for w in self.special_frame.winfo_children(): w.destroy()
-            
-            # Fetch rules
-            specials = config.NTYP_DATA.get(ntyp_id, {}).get('special', [])
+
+            # Base special inputs from spec, plus GAMMA when tension+bending applies
+            specials = list(config.NTYP_DATA.get(ntyp_id, {}).get('special', []))
+            if ntyp_id in (0, 7) and ltyp_id == 2 and 'GAMMA' not in specials:
+                specials.append('GAMMA')
+
             if not specials:
-                ttk.Label(self.special_frame, text="No special inputs required for this geometry.", font=('Segoe UI', 8, 'italic')).pack()
+                ttk.Label(self.special_frame, text="No special inputs required for this geometry.",
+                          font=('Segoe UI', 8, 'italic')).pack()
             else:
                 for req in specials:
-                    # Create var if missing
-                    if req not in self.vars: self.vars[req] = tk.StringVar(value="0.0")
+                    if req not in self.vars:
+                        self.vars[req] = tk.StringVar(value="0.0")
                     f = ttk.Frame(self.special_frame)
                     f.pack(fill='x', pady=2)
-                    ttk.Label(f, text=f"{req}:").pack(side='left')
-                    ttk.Entry(f, textvariable=self.vars[req]).pack(side='right', expand=True, fill='x')
+                    tip = config.TOOLTIPS.get(req)
+                    lbl = ttk.Label(f, text=f"{req}:")
+                    lbl.pack(side='left')
+                    e = ttk.Entry(f, textvariable=self.vars[req])
+                    e.pack(side='right', expand=True, fill='x')
+                    if tip:
+                        widgets.ToolTip(e, tip)
         except: pass
 
     # ------------------------------------------------------------------
@@ -292,12 +307,11 @@ class FastranGui(tk.Tk):
         
         self._add_entry(self.load_grid, "Max Stress (Smax):", 'SMAX', 0, 0)
         self._add_entry(self.load_grid, "Ratio (R):", 'R', 0, 1)
-        self._add_entry(self.load_grid, "Frequency:", 'FW', 1, 0)
-        
-        # Dynamic Label for Invert/Clip
+
+        # Dynamic Label for Invert/Clip (meaning depends on NFOPT)
         self.lbl_invert = ttk.Label(self.load_grid, text="Invert/Clip:")
-        self.lbl_invert.grid(row=1, column=2, sticky='e', padx=5)
-        ttk.Entry(self.load_grid, textvariable=self.vars['INVERT'], width=10).grid(row=1, column=3, sticky='w')
+        self.lbl_invert.grid(row=1, column=0, sticky='e', padx=5)
+        ttk.Entry(self.load_grid, textvariable=self.vars['INVERT'], width=10).grid(row=1, column=1, sticky='w')
 
         # Spectrum/Block editor launchers (visibility driven by NFOPT)
         self.spectrum_frame = ttk.LabelFrame(f, text="Spectrum File", padding=10)
@@ -318,6 +332,8 @@ class FastranGui(tk.Tk):
         self._add_combobox(sec10, "LTYP:",   'LTYP',   config.LTYP_OPTIONS,   0, 0)
         self._add_combobox(sec10, "LFAST:",  'LFAST',  config.LFAST_OPTIONS,  1, 0)
         self._add_combobox(sec10, "KCONST:", 'KCONST', config.KCONST_OPTIONS, 2, 0)
+        # Changing LTYP can expose/hide GAMMA in the Geometry tab special frame
+        self.vars['LTYP'].trace_add("write", lambda *_: self._on_ntyp_change())
         self._add_entry(sec10, "NS:",     'NS',     3, 0)
         self._add_entry(sec10, "NTCMAX:", 'NTCMAX', 3, 1)
 
@@ -413,9 +429,9 @@ class FastranGui(tk.Tk):
         self._add_eq_entry(grp, "C3:",         'C3', eq_idx, 1, 0)
         self._add_eq_entry(grp, "C4:",         'C4', eq_idx, 1, 1)
 
-        grp2 = ttk.LabelFrame(parent, text="Thresholds", padding=10)
+        grp2 = ttk.LabelFrame(parent, text="Threshold & Fracture", padding=10)
         grp2.pack(fill='x', pady=5)
-        self._add_eq_entry(grp2, "DKth (C5):", 'C5', eq_idx, 0, 0)
+        self._add_eq_entry(grp2, "Kc (C5):",  'C5', eq_idx, 0, 0)  # cyclic fracture toughness
         self._add_eq_entry(grp2, "C6:",        'C6', eq_idx, 0, 1)
         self._add_eq_entry(grp2, "C7:",        'C7', eq_idx, 1, 0)
 
@@ -879,6 +895,8 @@ class FastranGui(tk.Tk):
             for k, v in result.get('params', {}).items():
                 if k in self.vars:
                     self.vars[k].set(v)
+            # Store block definitions as JSON so the parser can write them
+            self.vars['BLOCK_DATA'].set(json.dumps(result.get('blocks', [])))
 
         editors.BlockEditorWindow(self, _on_save, initial_data, initial_params)
 

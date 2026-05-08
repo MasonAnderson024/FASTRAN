@@ -90,6 +90,11 @@ DEFAULT_VALUES = {
 
     # Legacy / GUI-only fields kept for backward compatibility
     'FW': '0.0', 'FH': '0.0',   # not in FASTRAN spec
+
+    # Block loading data (NFOPT=1) — JSON-encoded list of block dicts stored
+    # as a StringVar so the parser can read it without touching the filesystem.
+    # Each block: {'nsq': str, 'levels': [[smaxp, sminp, ncycp], ...]}
+    'BLOCK_DATA': '[]',
 }
 
 

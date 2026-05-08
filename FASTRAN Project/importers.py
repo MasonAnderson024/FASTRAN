@@ -216,8 +216,7 @@ def parse_fastran_input(filepath):
         for i, k in enumerate(keys16):
             if i < len(p): data[k] = p[i]
 
-        # ── Section 17: Primary loading (just grab SPEAK/SMEAN if present) ────
-        # Full block-data parsing not needed for the GUI import use case.
+        # ── Section 17: Primary loading ──────────────────────────────────────
         p = next_parts()  # Line 1: MAXSEQ MAXBLK LPRINT MAXLPR [NREP MARKER]
         if len(p) >= 4:
             data['MAXSEQ'] = p[0]
@@ -229,24 +228,43 @@ def parse_fastran_input(filepath):
             data['MARKER'] = p[5]
 
         if raw_nfopt not in (0, 1):
-            # Line 2 is a scalar: SPEAK (or SMEAN for NFOPT=2,3)
+            # Line 2: SPEAK (most spectra), SMEAN (NFOPT=2,3), or SPEAK+SMEAN (NFOPT=6)
             p2 = next_parts()
             if p2:
                 if raw_nfopt in (2, 3):
                     data['SMEAN'] = p2[0]
+                elif raw_nfopt == 6:
+                    # NFOPT=6: line 2 has both SPEAK and SMEAN
+                    data['SPEAK'] = p2[0]
+                    if len(p2) >= 2:
+                        data['SMEAN'] = p2[1]
                 else:
                     data['SPEAK'] = p2[0]
         else:
-            # NFOPT=0/1: Line 2 is SCALE, Line 3+ are block definitions
+            # NFOPT=0/1: Line 2 is SCALE, then MAXBLK blocks of (NSQ NSL + levels)
             p2 = next_parts()  # SCALE
-            if p2: data['SCALE'] = p2[0]
-            # Skip remaining block lines (not parsed into GUI vars)
-            p3 = next_parts()  # NBLK NSL NSQ
-            nsl = int(p3[1]) if len(p3) >= 2 else 1
-            for _level in range(nsl):
-                p_lvl = next_parts()  # SMAXP SMINP NCYCP
-                if len(p_lvl) >= 2 and not data.get('SMAX_PRIMARY'):
-                    data['SMAX_PRIMARY'] = p_lvl[0]
+            if p2:
+                data['SCALE'] = p2[0]
+
+            maxblk = int(data.get('MAXBLK', '1'))
+            all_blocks = []
+            for _blk in range(maxblk):
+                p3 = next_parts()  # NSQ NSL  (2 values per FASTRAN spec)
+                if not p3:
+                    break
+                nsq = p3[0]
+                nsl = int(p3[1]) if len(p3) >= 2 else 1
+                levels = []
+                for _level in range(nsl):
+                    p_lvl = next_parts()  # SMAXP SMINP NCYCP
+                    if len(p_lvl) >= 3:
+                        levels.append([p_lvl[0], p_lvl[1], p_lvl[2]])
+                    elif len(p_lvl) >= 2:
+                        levels.append([p_lvl[0], p_lvl[1], '1'])
+                all_blocks.append({'nsq': nsq, 'levels': levels})
+                if not data.get('SMAX_PRIMARY') and levels:
+                    data['SMAX_PRIMARY'] = levels[0][0]
+            data['BLOCK_DATA'] = json.dumps(all_blocks)
 
         # ── Section 18: KTH SMAXTH RTH CONST PRT ─────────────────────────────
         p = next_parts()

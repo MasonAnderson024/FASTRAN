@@ -233,14 +233,31 @@ def _write_loading_section(lines, nfopt, get_val, smax, smin):
         lines.append(row(maxseq, maxblk, lprint, maxlpr))
         # Line 2: SCALE
         lines.append(get_val('SCALE'))
-        # Lines 3+: block definitions
-        # For NFOPT=1, full block data comes from BlockEditorWindow (not wired yet).
-        # For NFOPT=0, generate a single block with one constant-amplitude level.
-        block_data = get_val('BLOCK_DATA') if 'BLOCK_DATA' in {} else None
-        if block_data is None:
-            # Default: one block, one stress level
-            lines.append(row(1, 1, 1))              # NBLK=1  NSL=1  NSQ=1
-            lines.append(row(smax, smin, 1))        # SMAXP SMINP NCYCP
+        # Lines 3+: block definitions per FASTRAN spec — for each block:
+        #   NSQ NSL        (number of sequence repetitions, number of stress levels)
+        #   SMAXP SMINP NCYCP  (repeated NSL times)
+        blocks = []
+        if nfopt == 1:
+            try:
+                import json as _json
+                raw = get_val('BLOCK_DATA')
+                if isinstance(raw, str) and raw.strip():
+                    blocks = _json.loads(raw)
+            except Exception:
+                blocks = []
+        if blocks:
+            for blk in blocks:
+                levels = blk.get('levels', [])
+                lines.append(row(blk.get('nsq', '1'), len(levels)))   # NSQ NSL
+                for lvl in levels:
+                    smaxp = lvl[0] if len(lvl) > 0 else '0.0'
+                    sminp = lvl[1] if len(lvl) > 1 else '0.0'
+                    ncycp = lvl[2] if len(lvl) > 2 else '1'
+                    lines.append(row(smaxp, sminp, ncycp))
+        else:
+            # Default: one block, one constant-amplitude stress level
+            lines.append(row(1, 1))                  # NSQ=1  NSL=1
+            lines.append(row(smax, smin, 1))         # SMAXP SMINP NCYCP
 
     elif nfopt in (2, 3):
         # TWIST / Mini-TWIST: MAXSEQ=4000 MAXBLK=10 (code-defined)

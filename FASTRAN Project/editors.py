@@ -14,6 +14,7 @@ All Toplevel editor windows for the FASTRAN GUI:
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
+import json
 import xml.etree.ElementTree as ET
 import queue
 import csv
@@ -1579,10 +1580,10 @@ class DkeffWindow(tk.Toplevel):
         self.parent.vars['MAT'].set(
             os.path.splitext(os.path.basename(lkpx_path))[0])
 
-        # Push data into main window crack-growth table
-        self.parent.table_data = table_rows
+        # Push data into main window crack-growth table (stored as JSON in CGR_TABLE StringVar)
+        self.parent.vars['CGR_TABLE'].set(json.dumps(table_rows))
         self.parent.vars['NTAB'].set(str(len(table_rows)))
-        self.parent._redraw_table()
+        self.parent._update_growth_plot()
 
         messagebox.showinfo(
             "Import Complete",
@@ -1613,9 +1614,14 @@ class DkeffWindow(tk.Toplevel):
             self.parent.vars['SYIELD'].set(f"{syield:.1f}")
             self.parent.vars['SULT'].set(f"{sult:.1f}")
             self.parent.vars['E'].set(f"{e_mod:.1f}")
-            self.parent.table_data = self.processed_data
+            try:
+                self.parent.vars['ALP'].set(f"{float(self.alp_entry.get()):.2f}")
+            except ValueError:
+                pass
+            # Store table in CGR_TABLE StringVar as JSON (the standard mechanism)
+            self.parent.vars['CGR_TABLE'].set(json.dumps(self.processed_data))
             self.parent.vars['NTAB'].set(str(len(self.processed_data)))
-            self.parent._redraw_table()
+            self.parent._update_growth_plot()
             messagebox.showinfo(
                 "Success",
                 f"Applied {len(self.processed_data)} data points to main window.",

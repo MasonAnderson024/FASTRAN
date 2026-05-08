@@ -368,14 +368,65 @@ def parse_material_xml(filepath):
     try:
         tree = ET.parse(filepath)
         root = tree.getroot()
-        
+
         # Extract basic properties if available
         # This is highly dependent on the XML schema used
         name = root.findtext('.//Material/Name', 'Unknown')
-        
+
         # Return a dict structure compatible with our GUI
         # (Simplified implementation)
         return {'MAT': name}
-        
+
     except Exception:
         return None
+
+
+def parse_lkpx_for_batch(filepath):
+    """
+    Parses an LK Pro-X .lkpx file (XML) to extract material properties and
+    all R-ratio crack-growth datasets for batch DKEFF conversion.
+
+    Returns:
+        (mat_props: dict, datasets: dict[r_ratio_str -> list[[dk, dadn]]])
+
+    Raises:
+        ValueError  if expected XML structure is not found
+        ET.ParseError  if the file is not valid XML
+    """
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(filepath)
+    root = tree.getroot()
+
+    mat_props = {
+        'SYIELD': root.findtext(".//PropertyData[@property='yld']/Data", '0.0'),
+        'SULT':   root.findtext(".//PropertyData[@property='ult_strength']/Data", '0.0'),
+        'E':      root.findtext(".//PropertyData[@property='e']/Data", '0.0'),
+    }
+
+    tlookup = root.find(".//PropertyData[@property='tlookup']/DataTable")
+    if tlookup is None:
+        raise ValueError("Could not find 'tlookup' data table in the .lkpx file.")
+
+    # Map column position → R-ratio string  (fields named like "r_0.1", "r_0.5", …)
+    r_map = {}
+    for field in tlookup.findall(".//Fields/Field"):
+        prop = field.get('property', '')
+        if prop.startswith('r_'):
+            r_map[field.get('pos')] = prop.split('_', 1)[1]
+
+    if not r_map:
+        raise ValueError("No R-ratio columns found in the .lkpx tlookup table.")
+
+    datasets = {r: [] for r in r_map.values()}
+    for row in tlookup.findall(".//Data/row"):
+        dadn_node = row.find("./FieldData[@pos='1']")
+        if dadn_node is None or dadn_node.text is None:
+            continue
+        dadn = dadn_node.text.strip()
+        for pos, r_val in r_map.items():
+            dk_node = row.find(f"./FieldData[@pos='{pos}']")
+            if dk_node is not None and dk_node.text:
+                datasets[r_val].append([dk_node.text.strip(), dadn])
+
+    return mat_props, datasets

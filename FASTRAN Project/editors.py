@@ -20,6 +20,7 @@ import csv
 import copy
 
 import runners
+import parsers
 import plots
 import utils
 import config
@@ -927,7 +928,7 @@ class DkeffWindow(tk.Toplevel):
         fm = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=fm)
         fm.add_command(label="Batch Convert .lkpx File...",
-                       command=self.parent._batch_convert_lkpx)
+                       command=self._batch_convert_lkpx)
         fm.add_separator()
         fm.add_command(label="Load dkeff Input File...", command=self._load_dkeff_input_file)
         fm.add_separator()
@@ -1034,8 +1035,32 @@ class DkeffWindow(tk.Toplevel):
         tbl_scrollbar.pack(side="right", fill="y")
         self.grid_widgets = []
 
-        bot = ttk.Frame(self, padding="10")
-        bot.pack(fill='x', side='bottom')
+        # Output viewer — hidden until a run completes.
+        # Must be packed (side='bottom') AFTER bot so it sits above bot in the layout.
+        self.out_lf = ttk.LabelFrame(self, text="dkeff Output", padding="5")
+        out_text_frame = ttk.Frame(self.out_lf)
+        out_text_frame.pack(fill='both', expand=True)
+        self.out_text = tk.Text(out_text_frame, height=8, wrap='none',
+                                font=('Courier', 8), state='disabled')
+        out_xsb = ttk.Scrollbar(out_text_frame, orient='horizontal',
+                                 command=self.out_text.xview)
+        out_ysb = ttk.Scrollbar(out_text_frame, orient='vertical',
+                                 command=self.out_text.yview)
+        self.out_text.configure(xscrollcommand=out_xsb.set,
+                                yscrollcommand=out_ysb.set)
+        self.out_text.grid(row=0, column=0, sticky='nsew')
+        out_ysb.grid(row=0, column=1, sticky='ns')
+        out_xsb.grid(row=1, column=0, sticky='ew')
+        out_text_frame.rowconfigure(0, weight=1)
+        out_text_frame.columnconfigure(0, weight=1)
+
+        self.bot_frame = ttk.Frame(self, padding="10")
+        self.bot_frame.pack(fill='x', side='bottom')
+        # Prime out_lf position in the pack list (above bot_frame), then hide it.
+        self.out_lf.pack(fill='x', side='bottom', padx=10, pady=(0, 5))
+        self.out_lf.pack_forget()
+
+        bot = self.bot_frame
         self.status_label = ttk.Label(bot, text="Status: Ready. Load a file or enter data manually.")
         self.status_label.pack(side='top', fill='x', pady=(0, 5))
         ctrl = ttk.Frame(bot)
@@ -1248,7 +1273,44 @@ class DkeffWindow(tk.Toplevel):
             return self._save_dkeff_input_file(fp)
         return False
 
+    def _validate_dkeff_inputs(self):
+        """Returns a list of error strings; empty list means inputs are valid."""
+        errors = []
+        def require_positive(widget, label):
+            try:
+                v = float(widget.get())
+                if v <= 0:
+                    errors.append(f"{label} must be a positive number (got {v}).")
+            except ValueError:
+                errors.append(f"{label} must be a valid number.")
+
+        require_positive(self.syield_entry, "Yield Stress (SYIELD)")
+        require_positive(self.sult_entry,   "Ultimate Strength (SULT)")
+        require_positive(self.e_entry,      "Elastic Modulus (E)")
+        require_positive(self.w_entry,      "Specimen Width (W)")
+        require_positive(self.t_entry,      "Specimen Thickness (T)")
+
+        try:
+            alp = float(self.alp_entry.get())
+            if alp <= 0:
+                errors.append(f"Constraint Factor (ALP) must be > 0 (got {alp}).")
+        except ValueError:
+            errors.append("Constraint Factor (ALP) must be a valid number.")
+
+        if not self.grid_widgets:
+            errors.append("Lab data table is empty — enter at least one data point.")
+
+        return errors
+
     def _run_dkeff(self):
+        errors = self._validate_dkeff_inputs()
+        if errors:
+            messagebox.showerror(
+                "Input Validation Failed",
+                "Fix these issues before running:\n\n  • " + "\n  • ".join(errors),
+                parent=self)
+            return
+
         if not self.dkeff_input_path and not self._save_dkeff_file_as():
             self.status_label.config(text="Status: Save cancelled. Run aborted.")
             return
@@ -1259,19 +1321,19 @@ class DkeffWindow(tk.Toplevel):
             exe_path = getattr(self.parent, 'dkeff21_exe_path', None)
             version_key = "dkeff21"
         else:
-            exe_path = (getattr(self.parent, 'dkeff13_exe_path', None)
-                        or getattr(self.parent, 'dkeff_exe_path', None))
+            exe_path = getattr(self.parent, 'dkeff13_exe_path', None)
             version_key = "dkeff13"
 
         if not exe_path or not os.path.exists(exe_path):
             messagebox.showerror(
                 "dkeff Executable Not Found",
                 f"Path for {version_str} is not configured or the file was not found.\n"
-                "Go to File > Configure Executable Paths.",
+                "Go to File > Configure Executable Paths in the main window.",
                 parent=self)
             return
 
         self.generate_button.config(state="disabled")
+        self.apply_button.config(state="disabled")
         self.status_label.config(text=f"Status: Running {version_str}...")
         self.dkeff_output_path = os.path.join(
             os.path.dirname(self.dkeff_input_path), self.output_filename_var.get())
@@ -1295,31 +1357,116 @@ class DkeffWindow(tk.Toplevel):
                 self.generate_button.config(state="normal")
             elif msg == "DONE":
                 self.processed_data = []
+                raw_output = ""
                 try:
                     with open(self.dkeff_output_path, 'r') as f:
-                        in_section = False
-                        for line in f:
-                            if "DKEFF ELASTIC:" in line:
-                                in_section = True
-                                continue
-                            if in_section and line.strip():
-                                parts = line.split()
-                                if len(parts) >= 2:
-                                    try:
-                                        self.processed_data.append(
-                                            [f"{float(parts[0]):.4f}",
-                                             f"{float(parts[1]):.4E}"])
-                                    except (ValueError, IndexError):
-                                        continue
+                        raw_output = f.read()
+                    in_section = False
+                    for line in raw_output.splitlines():
+                        if "DKEFF ELASTIC:" in line:
+                            in_section = True
+                            continue
+                        if in_section and line.strip():
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                try:
+                                    self.processed_data.append(
+                                        [f"{float(parts[0]):.4f}",
+                                         f"{float(parts[1]):.4E}"])
+                                except (ValueError, IndexError):
+                                    continue
                 except Exception as e:
                     messagebox.showerror("Parse Error",
                                          f"Could not read dkeff output:\n{e}", parent=self)
+
+                self._show_output(raw_output)
                 self.status_label.config(
-                    text=f"Run complete. {len(self.processed_data)} data points processed.")
+                    text=f"Run complete. {len(self.processed_data)} data points extracted.")
                 self.generate_button.config(state="normal")
-                self.apply_button.config(state="normal")
+                if self.processed_data:
+                    self.apply_button.config(state="normal")
         except queue.Empty:
             self.after(100, self._process_dkeff_queue)
+
+    def _show_output(self, text):
+        """Populate and reveal the output viewer panel."""
+        self.out_text.config(state='normal')
+        self.out_text.delete('1.0', tk.END)
+        self.out_text.insert('1.0', text if text else "(no output)")
+        self.out_text.config(state='disabled')
+        if not self.out_lf.winfo_ismapped():
+            self.out_lf.pack(fill='x', side='bottom', padx=10, pady=(0, 5))
+
+    def _batch_convert_lkpx(self):
+        """
+        Converts a multi-R-ratio .lkpx material file into a multi-dataset .dkin file
+        ready for dkeff.  Prompts the user for Smax/W/T per R-ratio via BatchInputDialog.
+        """
+        lkpx_path = filedialog.askopenfilename(
+            title="Select .lkpx Material File to Convert",
+            filetypes=(("LK Pro-X Material File", "*.lkpx"), ("All Files", "*.*")),
+            parent=self)
+        if not lkpx_path:
+            return
+
+        try:
+            mat_props, datasets = parsers.parse_lkpx_for_batch(lkpx_path)
+        except Exception as e:
+            messagebox.showerror("Parsing Error",
+                                 f"Could not parse the .lkpx file:\n{e}", parent=self)
+            return
+
+        r_ratios = sorted(datasets.keys(), key=float)
+        if not r_ratios:
+            messagebox.showerror("Empty File",
+                                 "No R-ratio datasets found in the file.", parent=self)
+            return
+
+        dlg = BatchInputDialog(self, r_ratios)
+        test_params = dlg.result
+        if not test_params:
+            return
+
+        initial_dir = getattr(self.parent.project, 'project_path', None)
+        if initial_dir:
+            initial_dir = os.path.join(initial_dir, "dkeff")
+            os.makedirs(initial_dir, exist_ok=True)
+        output_path = filedialog.asksaveasfilename(
+            title="Save Batch dkeff Input File As",
+            initialdir=initial_dir,
+            defaultextension=".dkin",
+            filetypes=(("dkeff Input File", "*.dkin"), ("All Files", "*.*")),
+            parent=self)
+        if not output_path:
+            return
+
+        try:
+            mat_name = self.parent.vars['MAT'].get()
+            syield = float(mat_props.get('SYIELD', '0'))
+            sult   = float(mat_props.get('SULT',   '0'))
+            e_mod  = float(mat_props.get('E',      '0'))
+            alp    = float(self.alp_entry.get() or '1.0')
+            with open(output_path, 'w') as f:
+                f.write(f"Batch conversion from {os.path.basename(lkpx_path)}\n")
+                f.write(f" {mat_name}\n")
+                f.write(" 2  0\n")   # NTYP=C(T), LUNIT=keep
+                f.write(f" {syield:<7.1f}  {sult:<7.1f}  {e_mod:<10.1f}  0  0  {alp:<5.1f}  0\n")
+                for r_ratio in r_ratios:
+                    smax, width, thick = test_params[r_ratio]
+                    data = datasets[r_ratio]
+                    mtab = len(data)
+                    f.write(f" {mtab}  {float(r_ratio):<4.2f}  {float(smax):<7.1f}"
+                            f"  {float(width):<7.4f}  {float(thick):<7.4f}\n")
+                    for i, (dk, dadn) in enumerate(data, start=1):
+                        f.write(f"  {i:>2d} {float(dk):>8.4f} {float(dadn):>11.4E}\n")
+            messagebox.showinfo(
+                "Batch Convert Complete",
+                f"Wrote {len(r_ratios)} R-ratio dataset(s) to:\n{output_path}\n\n"
+                "Use File > Load dkeff Input File to open it.",
+                parent=self)
+        except Exception as e:
+            messagebox.showerror("Write Error",
+                                 f"Could not write output file:\n{e}", parent=self)
 
     def _apply_to_main(self):
         if not self.processed_data:
@@ -1330,7 +1477,7 @@ class DkeffWindow(tk.Toplevel):
             sult = float(self.sult_entry.get())
             e_mod = float(self.e_entry.get())
             lunit_code = self.lunit_map[self.lunit_combo.get()]
-            factor = 6.895  # ksi → MPa
+            factor = config.KSI_TO_MPA
             if lunit_code == '1':
                 syield *= factor
                 sult *= factor

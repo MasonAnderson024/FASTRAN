@@ -8,6 +8,11 @@ and failure mode descriptions. Based on FASTRAN Version 5.4/5.78f User Guide.
 """
 
 # ------------------------------
+# UNIT CONVERSION
+# ------------------------------
+KSI_TO_MPA = 6.895  # multiply ksi → MPa; divide MPa → ksi
+
+# ------------------------------
 # DEFAULT VALUES
 # ------------------------------
 DEFAULT_VALUES = {

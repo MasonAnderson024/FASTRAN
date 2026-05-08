@@ -227,6 +227,89 @@ For more detailed information, please consult the "Short-User Guide-FASTRAN Ver.
   Threshold Test (KTH)
   - Enables a load-reduction threshold test instead of a standard fatigue analysis.
   - This is a special-purpose test, and should typically be left at 0 for normal analyses.
+
+-----------------------------------------------------------------------------
+  Tools: Material Data Generator (dkeff)
+-----------------------------------------------------------------------------
+
+The dkeff tool converts raw fatigue crack-growth test data into the effective
+stress-intensity-factor range (ΔKeff) vs. crack-growth-rate (da/dN) table that
+FASTRAN's Section 7b uses.
+
+Open it from the main window via Tools > Material Data Generator (DkEff)...
+
+[ Executable Versions ]
+
+  dkeff13 (Legacy)
+  - Older protocol: stdin sequence is IKEFF (=1 for file input), then test type,
+    input filename, output filename.
+
+  dkeff21f (New)
+  - Updated protocol: stdin sequence is test type, input filename, output filename
+    (the IKEFF prompt is absent).
+  - Configure the path to each EXE via File > Configure Executable Paths in the
+    main window.
+
+[ Input Parameters ]
+
+  Specimen Type (NTYP)
+  - 1: Middle-crack tension M(T)
+  - 2: Compact tension C(T)
+  - 3: ESE(T)
+
+  Test Type
+  - Constant R test: data was collected at a fixed stress ratio R. Supply R and Smax.
+  - Kmax test:       data was collected at a constant Kmax. Supply Kmax.
+
+  Analysis Mode (NSOP)
+  - Calculate c (NSOP=0): dkeff calculates crack length internally; only ΔK and
+    da/dN columns appear in the table.
+  - Input c (NSOP=1):     you supply the measured crack length c alongside ΔK and
+    da/dN. Most common mode.
+  - Input So/Smax (NSOP=2): you supply the crack-opening-stress ratio So/Smax
+    instead of c. Used for advanced closure analysis.
+
+  Specimen Dimensions
+  - W: Width (half-width for M(T)).
+  - T: Thickness.
+  - ALP: Constraint factor (1.0 = plane stress, 3.0 = plane strain).
+
+  Unit Conversion (LUNIT)
+  - Keep Same Units (0): no conversion applied.
+  - English → SI (1): ksi·√in → MPa·√m; multiplies stresses by 6.895.
+  - SI → English (2): MPa·√m → ksi·√in; divides stresses by 6.895.
+
+[ Lab Data Table ]
+
+  Each row represents one test data point. Columns:
+  - ΔK (stress-intensity-factor range)
+  - da/dN (crack-growth rate)
+  - c (crack length) or So/Smax — depending on NSOP
+
+  Data must be strictly ascending in both ΔK and da/dN.
+  Use the "Validate Data" button to check before running.
+
+[ Workflow ]
+
+  1. Enter material properties (SYIELD, SULT, E) and analysis parameters.
+  2. Enter lab data in the table, or load an existing .dkin file via
+     File > Load dkeff Input File.
+  3. Click "Validate Data" to check for ordering errors.
+  4. Click "Generate dKeff Data" to run the dkeff executable.
+  5. Review the raw output in the "dkeff Output" panel that appears below.
+  6. Click "Apply to Main Window" to copy the resulting ΔKeff table and
+     material properties back into the FASTRAN GUI.
+
+[ Batch .lkpx Conversion ]
+
+  Use File > Batch Convert .lkpx File to convert a multi-R-ratio LK Pro-X
+  material file (.lkpx) into a single multi-dataset .dkin file.
+
+  1. Select the .lkpx file.
+  2. For each R-ratio found in the file, enter Smax, W, and T.
+  3. Choose an output .dkin filename.
+  4. Load the resulting file via File > Load dkeff Input File, then select a
+     dataset from the list to process it individually with dkeff.
 """
 
 

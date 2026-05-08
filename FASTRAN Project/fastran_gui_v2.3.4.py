@@ -49,7 +49,8 @@ class FastranGui(tk.Tk):
         self.project = project.ProjectManager() # Starts empty
         self.log_queue = queue.Queue()
         self.fastran_exe_path = None
-        self.dkeff_exe_path = None
+        self.dkeff13_exe_path = None
+        self.dkeff21_exe_path = None
         self.help_window = None
         self.run_progress = None
         
@@ -110,10 +111,74 @@ class FastranGui(tk.Tk):
                     for line in f:
                         if "=" in line:
                             key, val = line.strip().split("=", 1)
-                            if key == "fastran_path": self.fastran_exe_path = val.strip()
-                            if key == "dkeff_path": self.dkeff_exe_path = val.strip()
+                            val = val.strip()
+                            if key == "fastran_path":
+                                self.fastran_exe_path = val
+                            if key in ("dkeff_path", "dkeff13_path"):
+                                self.dkeff13_exe_path = val
+                            if key == "dkeff21_path":
+                                self.dkeff21_exe_path = val
             except Exception as e:
                 print(f"Config Load Error: {e}")
+
+    def _save_external_config(self):
+        """Writes the three EXE paths back to fastran_gui.cfg."""
+        lines = []
+        if self.fastran_exe_path:
+            lines.append(f"fastran_path={self.fastran_exe_path}")
+        if self.dkeff13_exe_path:
+            lines.append(f"dkeff13_path={self.dkeff13_exe_path}")
+        if self.dkeff21_exe_path:
+            lines.append(f"dkeff21_path={self.dkeff21_exe_path}")
+        try:
+            with open("fastran_gui.cfg", 'w') as f:
+                f.write('\n'.join(lines) + '\n')
+        except Exception as e:
+            messagebox.showerror("Config Save Error", f"Could not save config:\n{e}")
+
+    def _configure_exe_paths(self):
+        """Opens a dialog to browse for FASTRAN, dkeff13, and dkeff21 executables."""
+        dlg = tk.Toplevel(self)
+        dlg.title("Configure Executable Paths")
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        entries = {}
+        rows = [
+            ("FASTRAN Executable:",  "fastran",  self.fastran_exe_path),
+            ("dkeff13 Executable:",  "dkeff13",  self.dkeff13_exe_path),
+            ("dkeff21f Executable:", "dkeff21",  self.dkeff21_exe_path),
+        ]
+        for i, (label, key, current) in enumerate(rows):
+            ttk.Label(dlg, text=label).grid(row=i, column=0, sticky='w', padx=10, pady=6)
+            var = tk.StringVar(value=current or "")
+            e = ttk.Entry(dlg, textvariable=var, width=50)
+            e.grid(row=i, column=1, padx=5)
+            entries[key] = var
+
+            def _browse(v=var):
+                path = filedialog.askopenfilename(
+                    title="Select Executable",
+                    filetypes=[("Executables", "*.exe"), ("All Files", "*.*")],
+                    parent=dlg)
+                if path:
+                    v.set(path)
+
+            ttk.Button(dlg, text="Browse…", command=_browse).grid(row=i, column=2, padx=5)
+
+        def _save():
+            self.fastran_exe_path  = entries["fastran"].get().strip() or None
+            self.dkeff13_exe_path  = entries["dkeff13"].get().strip() or None
+            self.dkeff21_exe_path  = entries["dkeff21"].get().strip() or None
+            self._save_external_config()
+            dlg.destroy()
+            messagebox.showinfo("Saved", "Executable paths saved to fastran_gui.cfg.")
+
+        bf = ttk.Frame(dlg, padding=(10, 6))
+        bf.grid(row=len(rows), column=0, columnspan=3, sticky='e')
+        ttk.Button(bf, text="Save", command=_save).pack(side='right', padx=5)
+        ttk.Button(bf, text="Cancel", command=dlg.destroy).pack(side='right')
 
     # ------------------------------------------------------------------
     # LAYOUT BUILDER
@@ -530,6 +595,8 @@ class FastranGui(tk.Tk):
         file_menu.add_command(label="Open Project...", command=self._open_project)
         file_menu.add_separator()
         file_menu.add_command(label="Import Legacy Input...", command=self._import_legacy_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="Configure Executable Paths...", command=self._configure_exe_paths)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
         

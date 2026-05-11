@@ -97,6 +97,12 @@ class FastranGui(tk.Tk):
         # Note: NTYP/NFOPT traces are handled by Combobox bindings
         self.vars['C1'].trace_add("write", self._update_growth_plot)
         self.vars['C2'].trace_add("write", self._update_growth_plot)
+        self.vars['NTAB'].trace_add("write", self._update_growth_plot)
+        self.vars['CGR_TABLE'].trace_add("write", self._update_growth_plot)
+
+        # Trace dimension vars to keep the geometry schematic in sync
+        for _k in ('W', 'B', 'CI', 'CF', 'AI', 'AN', 'CN', 'RAD'):
+            self.vars[_k].trace_add('write', self._update_geo_canvas)
 
     def _var_for(self, key, eq_idx):
         """Return the StringVar for a Section-6/7a key at the given equation index (1-based)."""
@@ -183,21 +189,53 @@ class FastranGui(tk.Tk):
     # ------------------------------------------------------------------
     # LAYOUT BUILDER
     # ------------------------------------------------------------------
+    # Per-tab workflow hints shown beneath the project status bar.
+    _TAB_HINTS = [
+        "Step 1 — Geometry: Choose a specimen type (NTYP) and fill in Width, Thickness, "
+        "and Initial/Final crack sizes.  The schematic updates in real-time.",
+        "Step 2 — Material: Enter yield strength, ultimate strength, Young's modulus, "
+        "and the constraint factor (ALP).  Use the Material Library to save/reload materials.",
+        "Step 3 — Loading: Select constant-amplitude or spectrum loading and enter the "
+        "applied stress.  For spectrum files, browse or use the Spectrum Editor.",
+        "Step 4 — Crack Growth: Enter Paris law constants C1 and C2 (da/dN = C1·ΔK^C2), "
+        "or load tabular da/dN data via Tools → Material Data Generator (dkeff).",
+        "Step 5 — Sensitivity: Sweep one variable over a range to build a parametric "
+        "design curve (cycles to failure vs. the swept parameter).",
+    ]
+
     def _create_layout(self):
-        # Top Bar: Project Status
+        # Top Bar: Project Status + help button
         top_frame = ttk.Frame(self, padding="10 5 10 0")
         top_frame.pack(fill='x')
         self.lbl_project = ttk.Label(
-            top_frame, 
-            text="No Project Loaded (Results will not be saved)", 
-            foreground="red", 
+            top_frame,
+            text="No project open — go to  File → New Project  to get started.",
+            foreground="red",
             font=('Segoe UI', 10, 'bold')
         )
         self.lbl_project.pack(side='left')
+        ttk.Button(top_frame, text="? Help", width=8,
+                   command=self._show_help).pack(side='right', padx=5)
+
+        # Workflow hint strip
+        hint_frame = ttk.Frame(self, padding="10 2 10 2")
+        hint_frame.pack(fill='x')
+        self.lbl_hint = ttk.Label(
+            hint_frame,
+            text=self._TAB_HINTS[0],
+            foreground='#1a5fa8',
+            font=('Segoe UI', 9, 'italic'),
+            anchor='w',
+            wraplength=900,
+        )
+        self.lbl_hint.pack(fill='x')
+
+        ttk.Separator(self, orient='horizontal').pack(fill='x', padx=10)
 
         # Main Tabs
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=5)
+        self.notebook.bind('<<NotebookTabChanged>>', self._on_tab_changed)
         
         # Tab 1: Geometry (Visual)
         self.tab_geo = ttk.Frame(self.notebook)
@@ -227,27 +265,43 @@ class FastranGui(tk.Tk):
         # Bottom Bar: Execution & Status
         bot_frame = ttk.Frame(self, padding="10")
         bot_frame.pack(fill='x', side='bottom')
-        
-        # Run Button
-        self.btn_run = ttk.Button(bot_frame, text="RUN ANALYSIS", command=self.run_analysis, state='disabled', width=20)
+
+        self.btn_run = ttk.Button(bot_frame, text="RUN ANALYSIS",
+                                  command=self.run_analysis, state='disabled', width=20)
         self.btn_run.pack(side='right', padx=5)
-        
-        # Status Log
-        self.status_var = tk.StringVar(value="Ready.")
-        ttk.Label(bot_frame, textvariable=self.status_var, relief='sunken', anchor='w').pack(side='left', fill='x', expand=True)
+        widgets.ToolTip(self.btn_run,
+                        "Create or open a project first (File → New Project),\n"
+                        "then fill all five tabs and click here to run FASTRAN.")
+
+        self.status_var = tk.StringVar(value="Welcome — create or open a project to begin.")
+        ttk.Label(bot_frame, textvariable=self.status_var,
+                  relief='sunken', anchor='w').pack(side='left', fill='x', expand=True)
+
+    def _on_tab_changed(self, event=None):
+        idx = self.notebook.index('current')
+        if 0 <= idx < len(self._TAB_HINTS):
+            self.lbl_hint.config(text=self._TAB_HINTS[idx])
 
     # ------------------------------------------------------------------
     # TAB 1: GEOMETRY
     # ------------------------------------------------------------------
     def _build_geometry_tab(self, parent):
+        ttk.Label(parent,
+                  text="Select the specimen geometry that matches your physical coupon or "
+                       "structural detail.  Enter width (W), thickness (B/T), and the "
+                       "initial (Ci) and final (Cf) crack sizes.  The schematic updates "
+                       "automatically as you type.",
+                  foreground='#444', font=('Segoe UI', 9), wraplength=900,
+                  justify='left').pack(fill='x', padx=14, pady=(8, 0))
+
         paned = ttk.PanedWindow(parent, orient='horizontal')
-        paned.pack(fill='both', expand=True, padx=10, pady=10)
-        
+        paned.pack(fill='both', expand=True, padx=10, pady=6)
+
         left = ttk.Frame(paned, padding=10)
         right = ttk.LabelFrame(paned, text="Specimen Schematic", padding=10)
         paned.add(left, weight=1)
         paned.add(right, weight=1)
-        
+
         # NTYP Selector
         ttk.Label(left, text="Geometry Type (NTYP):").pack(anchor='w')
         cb = ttk.Combobox(left, textvariable=self.vars['NTYP'], values=config.GEOMETRY_OPTIONS, state='readonly')
@@ -295,11 +349,31 @@ class FastranGui(tk.Tk):
                 parts.append(f"{label}=?")
         self.dim_readout.config(text="   ".join(parts))
 
+    def _collect_dims(self):
+        """Return a dict of current dimension values for the geometry canvas."""
+        dims = {}
+        for k in ('W', 'B', 'CI', 'CF', 'AI', 'AN', 'CN', 'RAD'):
+            try:
+                dims[k] = float(self.vars[k].get())
+            except (ValueError, TypeError, KeyError):
+                dims[k] = 0.0
+        return dims
+
+    def _update_geo_canvas(self, *_):
+        """Redraw the geometry schematic with the current dims (called by traces)."""
+        if not hasattr(self, 'geo_canvas'):
+            return
+        try:
+            ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
+        except (ValueError, TypeError, AttributeError):
+            return
+        self.geo_canvas.update_diagram(ntyp_id, dims=self._collect_dims())
+
     def _on_ntyp_change(self, event=None):
         """Update schematic and special fields."""
         try:
             ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
-            self.geo_canvas.update_diagram(ntyp_id)
+            self.geo_canvas.update_diagram(ntyp_id, dims=self._collect_dims())
             
             # Reset special frame
             for w in self.special_frame.winfo_children(): w.destroy()
@@ -322,9 +396,17 @@ class FastranGui(tk.Tk):
     # TAB 2: MATERIAL (Library Enabled)
     # ------------------------------------------------------------------
     def _build_material_tab(self, parent):
+        ttk.Label(parent,
+                  text="Enter the mechanical properties for your material.  "
+                       "Yield (Sy) must be less than Ultimate (Su).  "
+                       "ALP is the constraint factor: 1.0 = plane stress, ~2–3 = plane strain.  "
+                       "Save frequently used materials to the library for quick reuse.",
+                  foreground='#444', font=('Segoe UI', 9), wraplength=900,
+                  justify='left').pack(fill='x', padx=14, pady=(8, 0))
+
         f = ttk.Frame(parent, padding=20)
         f.pack(fill='both', expand=True)
-        
+
         # Material Library Controls
         lib_frame = ttk.LabelFrame(f, text="Material Library (JSON)", padding=10)
         lib_frame.pack(fill='x', pady=10)
@@ -344,9 +426,17 @@ class FastranGui(tk.Tk):
     # TAB 3: LOADING
     # ------------------------------------------------------------------
     def _build_loading_tab(self, parent):
+        ttk.Label(parent,
+                  text="Choose the loading type (NFOPT).  "
+                       "For constant-amplitude tests enter Smax and stress ratio R.  "
+                       "For spectrum or block loading, provide or create a load file using "
+                       "the editors below.",
+                  foreground='#444', font=('Segoe UI', 9), wraplength=900,
+                  justify='left').pack(fill='x', padx=14, pady=(8, 0))
+
         f = ttk.Frame(parent, padding=20)
         f.pack(fill='both', expand=True)
-        
+
         ttk.Label(f, text="Loading Type (NFOPT):").grid(row=0, column=0, sticky='w')
         cb = ttk.Combobox(f, textvariable=self.vars['NFOPT'], values=config.LOADING_OPTIONS, state='readonly', width=40)
         cb.grid(row=0, column=1, sticky='ew')
@@ -430,11 +520,20 @@ class FastranGui(tk.Tk):
     # TAB 4: CRACK GROWTH
     # ------------------------------------------------------------------
     def _build_crack_growth_tab(self, parent):
+        ttk.Label(parent,
+                  text="Enter Paris law constants C1 and C2 so that  da/dN = C1 · ΔK^C2  "
+                       "(SI units: da/dN in m/cycle, ΔK in MPa√m).  "
+                       "Alternatively, load tabular da/dN data from a .lkpx file via "
+                       "Tools → Material Data Generator (dkeff) — the plot updates automatically "
+                       "when tabular data is present (NTAB > 0).",
+                  foreground='#444', font=('Segoe UI', 9), wraplength=900,
+                  justify='left').pack(fill='x', padx=14, pady=(8, 0))
+
         paned = ttk.PanedWindow(parent, orient='horizontal')
-        paned.pack(fill='both', expand=True, padx=10, pady=10)
-        
+        paned.pack(fill='both', expand=True, padx=10, pady=6)
+
         left = ttk.Frame(paned, padding=10)
-        right = ttk.LabelFrame(paned, text="Paris Law Preview", padding=10)
+        right = ttk.LabelFrame(paned, text="Crack Growth Rate Preview", padding=10)
         paned.add(left, weight=3) # 60%
         paned.add(right, weight=2) # 40%
         
@@ -537,20 +636,42 @@ class FastranGui(tk.Tk):
 
     def _update_growth_plot(self, *args):
         try:
-            c1 = self.vars['C1'].get()
-            c2 = self.vars['C2'].get()
+            ntab = 0
+            try:
+                ntab = int(self.vars['NTAB'].get() or 0)
+            except (ValueError, TypeError):
+                pass
             self.plot_ax.clear()
-            plots.plot_paris_law(self.plot_ax, c1, c2, 0, 0)
+            if ntab > 0:
+                try:
+                    raw = self.vars['CGR_TABLE'].get()
+                    table_data = json.loads(raw) if raw else []
+                except (json.JSONDecodeError, KeyError):
+                    table_data = []
+                plots.plot_tabular_growth(self.plot_ax, table_data)
+            else:
+                c1 = self.vars['C1'].get()
+                c2 = self.vars['C2'].get()
+                plots.plot_paris_law(self.plot_ax, c1, c2, 0, 0)
             self.plot_canvas.draw()
-        except: pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # TAB 5: SENSITIVITY (Batch)
     # ------------------------------------------------------------------
     def _build_batch_tab(self, parent):
+        ttk.Label(parent,
+                  text="Run multiple analyses in one go by sweeping a parameter over a range.  "
+                       "Choose the variable (e.g. Smax or initial crack Ci), set start/end "
+                       "values and the number of steps, then click Generate & Run Batch.  "
+                       "The resulting design curve appears on the right.",
+                  foreground='#444', font=('Segoe UI', 9), wraplength=900,
+                  justify='left').pack(fill='x', padx=14, pady=(8, 0))
+
         paned = ttk.PanedWindow(parent, orient='horizontal')
-        paned.pack(fill='both', expand=True, padx=10, pady=10)
-        
+        paned.pack(fill='both', expand=True, padx=10, pady=6)
+
         left = ttk.LabelFrame(paned, text="Parametric Setup", padding=10)
         right = ttk.LabelFrame(paned, text="Design Curve", padding=10)
         paned.add(left, weight=1)
@@ -634,18 +755,25 @@ class FastranGui(tk.Tk):
             if name:
                 path = os.path.join(d, name)
                 self.project.create_project(path, name)
-                self.lbl_project.config(text=f"Project: {name}", foreground="green")
+                self.lbl_project.config(
+                    text=f"Project: {name}  |  Fill in all five tabs, then click RUN ANALYSIS.",
+                    foreground="green")
                 self.btn_run.config(state='normal')
-                self._save_gui_state() # Init settings
+                self.status_var.set(f"New project '{name}' created.  Complete each tab and run.")
+                self._save_gui_state()
 
     def _open_project(self):
         d = filedialog.askdirectory(title="Select Project Folder (.frproj)")
         if d:
             self.project.load_project(d)
-            self.lbl_project.config(text=f"Project: {self.project.metadata.get('name', 'Loaded')}", foreground="green")
+            name = self.project.metadata.get('name', 'Loaded')
+            self.lbl_project.config(
+                text=f"Project: {name}  |  Review settings and click RUN ANALYSIS.",
+                foreground="green")
             self.btn_run.config(state='normal')
             self._load_gui_state()
             self.results_menu.entryconfig("Export to CSV...", state="normal")
+            self.status_var.set(f"Project '{name}' opened.  Review settings and run.")
 
     def _save_gui_state(self):
         if not self.project.project_path: return

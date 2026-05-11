@@ -420,7 +420,20 @@ class FastranGui(tk.Tk):
         self._add_entry(grp, "Yield (Sy):", 'SYIELD', 1, 0)
         self._add_entry(grp, "Ultimate (Su):", 'SULT', 1, 1)
         self._add_entry(grp, "Modulus (E):", 'E', 2, 0)
-        self._add_entry(grp, "Constraint (ALP):", 'ALP', 2, 1)
+        self._add_entry(grp, "Poisson's Ratio (ETA):", 'ETA', 2, 1)
+
+        # Constraint & Plasticity
+        adv = ttk.LabelFrame(f, text="Constraint & Plasticity Options", padding=10)
+        adv.pack(fill='x', pady=10)
+        self._add_entry(adv, "Constraint (ALP):", 'ALP', 0, 0)
+        self._add_entry(adv, "Comp. Tip (BETAT):", 'BETAT', 0, 1)
+        self._add_entry(adv, "Comp. Wake (BETAW):", 'BETAW', 1, 0)
+        self._add_combobox(
+            adv, "Constraint Opt (NALP):", 'NALP',
+            config.NALP_OPTIONS, 1, 1)
+        self._add_combobox(
+            adv, "Plasticity Opt (NEP):", 'NEP',
+            config.NEP_OPTIONS, 2, 0)
 
     # ------------------------------------------------------------------
     # TAB 3: LOADING
@@ -793,10 +806,12 @@ class FastranGui(tk.Tk):
                 for k, v in state.items():
                     if k in self.vars: self.vars[k].set(v)
                 # Migrate legacy bare-integer values for combobox-driven fields
-                # (older saves predate the LTYP/LFAST/KCONST combobox upgrade).
-                for key, options in (('LTYP', config.LTYP_OPTIONS),
-                                     ('LFAST', config.LFAST_OPTIONS),
-                                     ('KCONST', config.KCONST_OPTIONS)):
+                # (older saves predate the LTYP/LFAST/KCONST/NALP/NEP combobox upgrade).
+                for key, options in (('LTYP',   config.LTYP_OPTIONS),
+                                     ('LFAST',  config.LFAST_OPTIONS),
+                                     ('KCONST', config.KCONST_OPTIONS),
+                                     ('NALP',   config.NALP_OPTIONS),
+                                     ('NEP',    config.NEP_OPTIONS)):
                     cur = self.vars[key].get()
                     if ':' not in cur:
                         self.vars[key].set(config.label_for_int(cur, options))

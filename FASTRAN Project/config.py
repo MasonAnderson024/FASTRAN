@@ -251,6 +251,17 @@ LFAST_OPTIONS  = [_to_option_str(k, v) for k, v in sorted(LFAST_DATA.items())]
 LTYP_OPTIONS   = [_to_option_str(k, v) for k, v in sorted(LTYP_DATA.items())]
 KCONST_OPTIONS = [_to_option_str(k, v) for k, v in sorted(KCONST_DATA.items())]
 
+NALP_OPTIONS = [
+    '0: Constant ALP',
+    '1: Variable ALP (rate-dependent)',
+]
+
+NEP_OPTIONS = [
+    '0: Elastic (no correction)',
+    '1: Cyclic plastic zone (recommended)',
+    '2: Monotonic plastic zone',
+]
+
 
 def label_for_int(value, options):
     """Look up the 'N: label' form matching the integer value. Falls back to str(value)."""
@@ -267,11 +278,13 @@ def label_for_int(value, options):
     return str(value)
 
 
-# Promote the option-0 label as the GUI default for the three combobox-driven
-# Section 10 fields (overrides the bare-integer defaults written above).
+# Promote the option-0 label as the GUI default for combobox-driven fields
+# (overrides the bare-integer defaults written above).
 DEFAULT_VALUES['LTYP']   = LTYP_OPTIONS[0]
 DEFAULT_VALUES['LFAST']  = LFAST_OPTIONS[0]
 DEFAULT_VALUES['KCONST'] = KCONST_OPTIONS[0]
+DEFAULT_VALUES['NALP']   = NALP_OPTIONS[0]
+DEFAULT_VALUES['NEP']    = NEP_OPTIONS[1]   # Cyclic plastic zone is the recommended default
 
 
 # ------------------------------
@@ -335,13 +348,29 @@ TOOLTIPS = {
     'NFOPT':   'Loading type. 0=Constant Amplitude, 1=Block, 2-10=Spectrum files.',
     'SMAX':    'Maximum applied stress for pre-cracking (Section 15). Also used as primary loading stress for NFOPT=0.',
     'R':       'Stress ratio R=Smin/Smax. Smin is computed as SMAX × R.',
-    'INVERT':  'Spectrum modification flag. Meaning depends on NFOPT; see user guide.',
+    'FW':      'Loading frequency (Hz). Stored for reference; not used directly in crack-growth calculations.',
+    'MAT':     'Free-text material identifier label (up to 60 characters). Appears in FASTRAN output header.',
+    'INVERT':  'Spectrum clipping/inversion flag. NFOPT=0/1: 0=normal, 1=invert sign. NFOPT=2/3 (TWIST): clip level (0=none, 2–5=Level II–V). The label above this field updates automatically with NFOPT.',
     'SPEAK':   'Peak scaling stress for spectrum loading (NFOPT 4-10).',
     'SMEAN':   'Mean stress for TWIST/Mini-TWIST/Gaussian spectra (NFOPT=2,3,6).',
     'MAXSEQ':  'Total number of blocks/flights in the repeated sequence.',
     'MAXBLK':  'Number of different blocks/flights in the load history.',
     'SCALE':   'Scale factor applied to all block/flight stresses (NFOPT=0 or 1).',
     'LPRINT':  '0=No internal spectrum print. 1=Block/flight numbers. 2=Full details.',
+    'NREP':    'Number of times the NFOPT=8 external spectrum sequence repeats per simulated flight/block.',
+    'MARKER':  'Marker band flag for NFOPT=8. 0=none; 1=insert a marker-load band every NREP repeats.',
+    'IPLOT':   '0=No real-time plot file. 1=Write intermediate plot data to a .fpl file during the run.',
+    'NPLOT':   'Number of crack-growth data points written to the plot file. 0=use the NPRT/DCPR output interval.',
+    'NCYCLE1': 'Number of constant-amplitude pre-test cycles applied before the proof overload (Section 16).',
+    'NCYCLE2': 'Number of constant-amplitude post-test cycles applied after the proof overload (Section 16).',
+    'RATE1':   'da/dN rate (m/cycle or in/cycle) at which the flat-to-slant constraint transition begins (ALP → ALP1). NALP=1 only.',
+    'ALP1':    'Constraint factor ALP at the onset of the flat-to-slant transition (rate = RATE1). NALP=1 only.',
+    'BETAT1':  'Compressive constraint at the crack tip when da/dN = RATE1. NALP=1 only.',
+    'BETAW1':  'Compressive constraint along the crack wake when da/dN = RATE1. NALP=1 only.',
+    'RATE2':   'da/dN rate at which the flat-to-slant transition is complete (ALP reaches ALP2). Must be > RATE1. NALP=1 only.',
+    'ALP2':    'Final constraint factor ALP after the transition (da/dN ≥ RATE2). NALP=1 only.',
+    'BETAT2':  'Compressive constraint at the crack tip when da/dN ≥ RATE2. NALP=1 only.',
+    'BETAW2':  'Compressive constraint along the crack wake when da/dN ≥ RATE2. NALP=1 only.',
     'GAMMA':   'Ratio of outer-fiber bending stress to remote tensile stress (γ=Sb/S). Required for NTYP=0,7 with LTYP=2, or NTYP=-10.',
     'XKT':     'Elastic stress concentration factor Kt. Required for NTYP=-7,-8,-9.',
     'NBCF':    'BCF type: 0=Uniform stress (h/w=2); 1=Disp h/w=1.5; 2=Disp h/w=2; 3=Disp h/w=3. For NTYP=-7,-8,-9.',

@@ -1033,6 +1033,7 @@ class FastranGui(tk.Tk):
 
     def _monitor_execution_queue(self):
         plot_updated = False
+        run_done = False
         try:
             while True:
                 msg = self.log_queue.get_nowait()
@@ -1041,11 +1042,13 @@ class FastranGui(tk.Tk):
                     self.status_var.set("Run Complete.")
                     self.btn_run.config(state='normal')
                     self.results_menu.entryconfig("Export to CSV...", state="normal")
+                    run_done = True
                     messagebox.showinfo("Success", "Analysis Complete.")
                 elif "ERROR" in msg or "SECURITY BLOCK" in msg:
                     self._close_run_progress()
                     self.status_var.set("Run Failed.")
                     self.btn_run.config(state='normal')
+                    run_done = True
                     messagebox.showerror("Error", msg)
                 elif self._parse_live_crack_line(msg):
                     plot_updated = True
@@ -1062,6 +1065,17 @@ class FastranGui(tk.Tk):
                 self.live_canvas.draw()
             except Exception:
                 pass
+            # Animate the geometry schematic with the current crack size
+            try:
+                ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
+                live_dims = self._collect_dims()
+                live_dims['CI'] = self._live_crack[-1]
+                self.geo_canvas.update_diagram(ntyp_id, dims=live_dims)
+            except Exception:
+                pass
+        if run_done:
+            # Restore schematic to the user's original CI value
+            self._update_geo_canvas()
         self.after(200, self._monitor_execution_queue)
 
     # ------------------------------------------------------------------

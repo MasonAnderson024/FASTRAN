@@ -25,6 +25,7 @@ import parsers
 import plots
 import utils
 import config
+import widgets as widgets_mod   # ToolTip helper (avoids name collision with tkinter)
 from project import ProjectManager
 
 from matplotlib.figure import Figure
@@ -86,6 +87,21 @@ class SpectrumCreatorWindow(tk.Toplevel):
         edit_menu.add_command(label="Undo", accelerator="Ctrl+Z", command=self._undo)
         edit_menu.add_command(label="Redo", accelerator="Ctrl+Y", command=self._redo)
 
+        # ── Guide banner ─────────────────────────────────────────────────────
+        guide = ttk.Frame(self, padding="10 8 10 4")
+        guide.pack(fill='x')
+        ttk.Label(guide,
+                  text="Define the load spectrum as a table of (Smax, Smin, Cycles) "
+                       "levels — each row is one distinct load level.  "
+                       "SPEAK scales every stress value before the analysis (set to the peak "
+                       "stress if you normalise to 1.0).  "
+                       "INVERT=1 swaps the order of each max/min pair.  "
+                       "Use  Normalize  to rescale so peak = 1, then put the real peak in SPEAK.  "
+                       "Ctrl+Z / Ctrl+Y to undo/redo.",
+                  foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+                  wraplength=700, justify='left').pack(fill='x')
+        ttk.Separator(self, orient='horizontal').pack(fill='x', padx=10, pady=(4, 0))
+
         top_frame = ttk.Frame(self, padding="10")
         top_frame.pack(fill='x', padx=10, pady=5)
         top_frame.columnconfigure(1, weight=1)
@@ -96,12 +112,20 @@ class SpectrumCreatorWindow(tk.Toplevel):
         self.title_entry.grid(row=0, column=1, columnspan=3, sticky='ew', padx=5)
 
         ttk.Label(top_frame, text="INVERT:").grid(row=1, column=0, sticky='w', pady=(5, 2))
-        ttk.Entry(top_frame, width=10, textvariable=self.invert_var).grid(
-            row=1, column=1, sticky='w', padx=5)
+        invert_e = ttk.Entry(top_frame, width=10, textvariable=self.invert_var)
+        invert_e.grid(row=1, column=1, sticky='w', padx=5)
+        widgets_mod.ToolTip(invert_e,
+            "0 = normal (max applied first, then min).\n"
+            "1 = inverted (min applied first, then max).\n"
+            "Use 1 for compressive spectra or when the test machine applies loads bottom-up.")
 
         ttk.Label(top_frame, text="SPEAK:").grid(row=2, column=0, sticky='w', pady=(5, 2))
-        ttk.Entry(top_frame, textvariable=self.speak_var, width=10).grid(
-            row=2, column=1, sticky='w', padx=5)
+        speak_e = ttk.Entry(top_frame, textvariable=self.speak_var, width=10)
+        speak_e.grid(row=2, column=1, sticky='w', padx=5)
+        widgets_mod.ToolTip(speak_e,
+            "Scale factor applied to every stress value in this spectrum.\n"
+            "Example: enter normalised levels (peak = 1.0) then set SPEAK = actual peak stress.\n"
+            "The plot preview reflects this scaling.")
 
         ttk.Button(top_frame, text="Save & Close",
                    command=self._generate_and_close).grid(row=0, column=4, sticky='ne', padx=5)
@@ -520,6 +544,19 @@ class PostProcessingWindow(tk.Toplevel):
         fm.add_separator()
         fm.add_command(label="Close", command=self.destroy)
 
+        # ── Guide banner ─────────────────────────────────────────────────────
+        guide = ttk.Frame(self, padding="10 6 10 4")
+        guide.pack(fill='x')
+        ttk.Label(guide,
+                  text="Post-processor: review FASTRAN output data from the last run.  "
+                       "Select any two columns for the X and Y axes using the dropdowns below "
+                       "the plot — typical view is Cycles (X) vs crack size (Y).  "
+                       "Enable log scale checkboxes for da/dN or crack-growth plots.  "
+                       "Use  File → Save Results As CSV  to export the full output table.",
+                  foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+                  wraplength=960, justify='left').pack(fill='x')
+        ttk.Separator(self, orient='horizontal').pack(fill='x', padx=10, pady=(4, 0))
+
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_pane.pack(fill='both', expand=True, padx=10, pady=5)
 
@@ -543,6 +580,9 @@ class PostProcessingWindow(tk.Toplevel):
                                           state='readonly', width=15)
         self.y_axis_combo.pack(side='left')
         self.y_axis_combo.bind("<<ComboboxSelected>>", self._draw_custom_plot)
+        widgets_mod.ToolTip(self.y_axis_combo,
+            "Choose the output column to plot on the Y-axis.\n"
+            "Common choices: crack size C, stress intensity K, closure level So.")
         ttk.Checkbutton(ctrl, text="log", variable=self.log_y_var,
                         command=self._draw_custom_plot).pack(side='left', padx=5)
         ttk.Label(ctrl, text="X-Axis:").pack(side='left', padx=(20, 5))
@@ -550,6 +590,9 @@ class PostProcessingWindow(tk.Toplevel):
                                           state='readonly', width=15)
         self.x_axis_combo.pack(side='left')
         self.x_axis_combo.bind("<<ComboboxSelected>>", self._draw_custom_plot)
+        widgets_mod.ToolTip(self.x_axis_combo,
+            "Choose the output column to plot on the X-axis.\n"
+            "CYCLES is the most common choice for a crack-growth life plot.")
         ttk.Checkbutton(ctrl, text="log", variable=self.log_x_var,
                         command=self._draw_custom_plot).pack(side='left', padx=5)
 
@@ -658,10 +701,33 @@ class BlockEditorWindow(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
 
+    _BLOCK_PARAM_TIPS = {
+        'MAXSEQ': "Number of blocks in the sequence (set automatically).",
+        'MAXBLK': "Number of times the entire block sequence is repeated.\n"
+                  "Total load cycles = (cycles per sequence) × MAXBLK.",
+        'SCALE':  "Multiplies every stress value in every block before the run.\n"
+                  "Use this to apply a stress-level factor without editing individual blocks.",
+        'LPRINT': "Output verbosity flag passed to FASTRAN.\n0 = normal; 1 = extra output.",
+        'MAXLPR': "Maximum number of print lines per block (0 = no limit).",
+    }
+
     def _create_widgets(self):
         bot = ttk.Frame(self, padding=10)
         bot.pack(side="bottom", fill="x")
         ttk.Button(bot, text="Save & Close", command=self._save_and_close).pack(side="right")
+
+        # ── Guide banner ─────────────────────────────────────────────────────
+        guide = ttk.Frame(self, padding="10 8 10 4")
+        guide.pack(side="top", fill='x')
+        ttk.Label(guide,
+                  text="NFOPT=1 block loading: define a sequence of load blocks, "
+                       "each containing one or more (Smax, Smin, Cycles) levels.  "
+                       "The entire sequence is repeated MAXBLK times.  "
+                       "Select a block on the left to edit its stress levels on the right.  "
+                       "SCALE multiplies every stress value in every block.",
+                  foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+                  wraplength=800, justify='left').pack(fill='x')
+        ttk.Separator(self, orient='horizontal').pack(side="top", fill='x', padx=10, pady=(4, 0))
 
         params_lf = ttk.LabelFrame(self, text="Global Loading Parameters", padding=10)
         params_lf.pack(side="top", fill="x", padx=10, pady=5)
@@ -673,6 +739,9 @@ class BlockEditorWindow(tk.Toplevel):
             if label == "MAXSEQ:":
                 e.config(state='disabled')
             e.grid(row=i // 3, column=(i % 3) * 2 + 1, sticky='w', padx=5)
+            tip = self._BLOCK_PARAM_TIPS.get(key)
+            if tip:
+                widgets_mod.ToolTip(e, tip)
 
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         paned.pack(fill='both', expand=True, padx=10, pady=(10, 0))
@@ -939,6 +1008,23 @@ class DkeffWindow(tk.Toplevel):
         fm.add_separator()
         fm.add_command(label="Close", command=self.destroy)
 
+        # ── Workflow guide banner ────────────────────────────────────────────
+        guide_frame = ttk.Frame(self, padding="10 8 10 4")
+        guide_frame.pack(fill='x')
+        guide_text = (
+            "Purpose: convert raw lab crack-growth data (ΔK, da/dN) into effective-ΔK "
+            "values by applying Newman's crack-closure model.\n"
+            "Workflow:  ① Enter material properties & specimen dimensions on the left.  "
+            "② Paste measured ΔK / da/dN rows into the table on the right.  "
+            "③ Click Generate dKeff Data.  ④ Click Apply to Main Window.\n"
+            "Shortcut: if your data is already on a ΔKeff basis (e.g. from the AFMAT "
+            "database), use  File → Import .lkpx Direct to Main Window  — no dkeff run needed."
+        )
+        ttk.Label(guide_frame, text=guide_text, foreground='#1a5fa8',
+                  font=('Segoe UI', 9, 'italic'), wraplength=820,
+                  justify='left').pack(fill='x')
+        ttk.Separator(self, orient='horizontal').pack(fill='x', padx=10, pady=(0, 4))
+
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         paned.pack(fill='both', expand=True, padx=10, pady=5)
 
@@ -947,22 +1033,31 @@ class DkeffWindow(tk.Toplevel):
 
         self.input_file_label = ttk.Label(
             params_frame, text="Input File: None", relief="sunken", anchor="w", padding=2)
-        self.input_file_label.pack(fill='x', pady=(0, 10))
+        self.input_file_label.pack(fill='x', pady=(0, 6))
 
-        mat_lf = ttk.LabelFrame(params_frame, text="Material Properties", padding="10")
-        mat_lf.pack(fill='x', pady=5)
-        for i, (lbl, attr) in enumerate([
-            ("Yield Stress (SYIELD):", "syield_entry"),
-            ("Ultimate Strength (SULT):", "sult_entry"),
-            ("Elastic Modulus (E):", "e_entry"),
-        ]):
+        # ── Material properties ──────────────────────────────────────────────
+        mat_lf = ttk.LabelFrame(params_frame, text="① Material Properties", padding="10")
+        mat_lf.pack(fill='x', pady=4)
+        mat_fields = [
+            ("Yield Stress (MPa):",     "syield_entry",
+             "Yield stress Sy (0.2 % offset).  Must be less than ultimate strength."),
+            ("Ultimate Strength (MPa):", "sult_entry",
+             "Ultimate tensile strength Su."),
+            ("Elastic Modulus (MPa):",   "e_entry",
+             "Young's modulus E.  Typical aluminium: 70 000 MPa.  Steel: 210 000 MPa."),
+        ]
+        for i, (lbl, attr, tip) in enumerate(mat_fields):
             ttk.Label(mat_lf, text=lbl).grid(row=i, column=0, sticky='w', pady=2)
             e = ttk.Entry(mat_lf)
             e.grid(row=i, column=1, sticky='ew', padx=5)
             setattr(self, attr, e)
+            widgets_mod.ToolTip(e, tip)
+        mat_lf.columnconfigure(1, weight=1)
 
-        analysis_lf = ttk.LabelFrame(params_frame, text="Test & Analysis Parameters", padding="10")
-        analysis_lf.pack(fill='x', pady=5)
+        # ── Test & analysis parameters ───────────────────────────────────────
+        analysis_lf = ttk.LabelFrame(
+            params_frame, text="② Specimen & Test Parameters", padding="10")
+        analysis_lf.pack(fill='x', pady=4)
 
         ttk.Label(analysis_lf, text="Specimen Type (NTYP):").grid(row=0, column=0, sticky='w')
         self.ntyp_combo = ttk.Combobox(
@@ -970,65 +1065,94 @@ class DkeffWindow(tk.Toplevel):
             state='readonly', values=list(self.ntyp_map.keys()))
         self.ntyp_combo.current(1)
         self.ntyp_combo.grid(row=0, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.ntyp_combo,
+            "1 = Middle-crack tension M(T)\n"
+            "2 = Compact tension C(T)\n"
+            "3 = Eccentrically-loaded single-edge ESE(T)")
 
         ttk.Label(analysis_lf, text="dkeff Version:").grid(row=1, column=0, sticky='w')
         self.dkeff_version_combo = ttk.Combobox(
             analysis_lf, textvariable=self.dkeff_version_var,
             state='readonly', values=["dkeff13 (Legacy)", "dkeff21f (New)"])
         self.dkeff_version_combo.grid(row=1, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.dkeff_version_combo,
+            "dkeff13: older executable, widely tested.\n"
+            "dkeff21f: updated version with additional output.\n"
+            "Configure paths via  File → Configure Executable Paths  in the main window.")
 
         ttk.Label(analysis_lf, text="Test Type:").grid(row=2, column=0, sticky='w')
         self.test_type_combo = ttk.Combobox(
             analysis_lf, textvariable=self.test_type_var,
             state='readonly', values=list(self.test_type_map.keys()))
         self.test_type_combo.grid(row=2, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.test_type_combo,
+            "Constant R: specify stress ratio R and Smax for each dataset.\n"
+            "Kmax: specify Kmax directly (use when R was varied to hold Kmax constant).")
 
         ttk.Label(analysis_lf, text="Analysis Mode (NSOP):").grid(row=3, column=0, sticky='w')
         self.nsop_combo = ttk.Combobox(
             analysis_lf, textvariable=self.nsop_var,
             state='readonly', values=list(self.nsop_map.keys()))
         self.nsop_combo.grid(row=3, column=1, sticky='ew', padx=5)
-        widgets.ToolTip(self.nsop_combo,
+        widgets_mod.ToolTip(self.nsop_combo,
             "NSOP=0 (Calculate c): dkeff computes crack length internally — "
             "use this when specimen geometry is unknown (e.g. AFMAT/database data).\n"
             "NSOP=1 (Input c): you supply measured crack length alongside ΔK and da/dN.\n"
             "NSOP=2 (Input So/Smax): supply crack-opening-stress ratio instead of c.")
 
-        self.kmax_lbl = ttk.Label(analysis_lf, text="Kmax:")
+        self.kmax_lbl = ttk.Label(analysis_lf, text="Kmax (MPa√m):")
         self.kmax_lbl.grid(row=4, column=0, sticky='w')
         self.kmax_entry = ttk.Entry(analysis_lf)
         self.kmax_entry.grid(row=4, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.kmax_entry, "Maximum stress-intensity factor for a Kmax test.")
 
         self.r_lbl = ttk.Label(analysis_lf, text="Stress Ratio (R):")
         self.r_lbl.grid(row=5, column=0, sticky='w')
         self.r_entry = ttk.Entry(analysis_lf, textvariable=self.r_var)
         self.r_entry.grid(row=5, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.r_entry,
+            "Stress ratio R = Smin / Smax.  Range: −1 ≤ R < 1.  "
+            "Typical tension-tension tests: R = 0.1.")
 
-        self.smax_lbl = ttk.Label(analysis_lf, text="Smax:")
+        self.smax_lbl = ttk.Label(analysis_lf, text="Smax (MPa):")
         self.smax_lbl.grid(row=6, column=0, sticky='w')
         self.smax_entry = ttk.Entry(analysis_lf, textvariable=self.smax_var)
         self.smax_entry.grid(row=6, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.smax_entry, "Maximum gross-section stress applied during the test.")
 
-        ttk.Label(analysis_lf, text="Specimen Width (W):").grid(row=7, column=0, sticky='w')
+        ttk.Label(analysis_lf, text="Specimen Width W (mm):").grid(row=7, column=0, sticky='w')
         self.w_entry = ttk.Entry(analysis_lf)
         self.w_entry.grid(row=7, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.w_entry,
+            "Half-width for M(T); full width for C(T)/ESE(T).  Units match LUNIT setting.")
 
-        ttk.Label(analysis_lf, text="Specimen Thickness (T):").grid(row=8, column=0, sticky='w')
+        ttk.Label(analysis_lf, text="Specimen Thickness T (mm):").grid(row=8, column=0, sticky='w')
         self.t_entry = ttk.Entry(analysis_lf)
         self.t_entry.grid(row=8, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.t_entry, "Net specimen thickness (after side-grooving if any).")
 
         ttk.Label(analysis_lf, text="Constraint Factor (ALP):").grid(row=9, column=0, sticky='w')
         self.alp_entry = ttk.Entry(analysis_lf)
         self.alp_entry.grid(row=9, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.alp_entry,
+            "Plane-stress/strain constraint factor.\n"
+            "1.0 = plane stress (thin sheet).\n"
+            "~2.5–3.0 = plane strain (thick specimen).\n"
+            "Use the Specimen Preset dropdown below for standard ASTM E647 values.")
 
         ttk.Label(analysis_lf, text="Unit Conversion (LUNIT):").grid(row=10, column=0, sticky='w')
         self.lunit_combo = ttk.Combobox(
             analysis_lf, state='readonly', values=list(self.lunit_map.keys()))
         self.lunit_combo.current(0)
         self.lunit_combo.grid(row=10, column=1, sticky='ew', padx=5)
+        widgets_mod.ToolTip(self.lunit_combo,
+            "Controls unit conversion applied to the dkeff output before the run.\n"
+            "FASTRAN expects SI (MPa, mm, m/cycle) — choose the conversion that "
+            "matches your lab data units.")
 
         ttk.Separator(analysis_lf, orient='horizontal').grid(
             row=11, column=0, columnspan=2, sticky='ew', pady=(8, 4))
+
         ttk.Label(analysis_lf, text="Specimen Preset:").grid(row=12, column=0, sticky='w')
         preset_frame = ttk.Frame(analysis_lf)
         preset_frame.grid(row=12, column=1, sticky='ew', padx=5)
@@ -1037,12 +1161,28 @@ class DkeffWindow(tk.Toplevel):
             preset_frame, textvariable=self.preset_var,
             state='readonly', values=list(config.DKEFF_SPECIMEN_PRESETS.keys()), width=22)
         self.preset_combo.pack(side='left', fill='x', expand=True)
-        ttk.Button(preset_frame, text="Apply", command=self._apply_preset).pack(side='left', padx=(4, 0))
+        ttk.Button(preset_frame, text="Apply", command=self._apply_preset).pack(
+            side='left', padx=(4, 0))
+        widgets_mod.ToolTip(self.preset_combo,
+            "Fill W, T, and ALP automatically from standard ASTM E647 specimen sizes.\n"
+            "Select a preset then click Apply.")
 
+        analysis_lf.columnconfigure(1, weight=1)
+
+        # ── Lab data table ───────────────────────────────────────────────────
         tbl_container = ttk.Frame(paned, padding="5")
         paned.add(tbl_container, weight=3)
-        tbl_lf = ttk.LabelFrame(tbl_container, text="Lab Data (Editable)", padding="10")
+        tbl_lf = ttk.LabelFrame(
+            tbl_container,
+            text="③ Lab Data — ΔK (MPa√m) / da/dN (m/cycle) / c (mm, if NSOP=1)",
+            padding="10")
         tbl_lf.pack(fill='both', expand=True)
+        ttk.Label(tbl_lf,
+                  text="Enter one measured data point per row, in ascending ΔK order.  "
+                       "ΔK = stress-intensity-factor range; da/dN = crack growth rate; "
+                       "c = half-crack length at that data point (only needed for NSOP=1).",
+                  foreground='#444', font=('Segoe UI', 8, 'italic'),
+                  wraplength=440, justify='left').pack(anchor='w', pady=(0, 6))
         grid_canvas = tk.Canvas(tbl_lf, borderwidth=0, highlightthickness=0)
         tbl_scrollbar = ttk.Scrollbar(tbl_lf, orient="vertical", command=grid_canvas.yview)
         self.grid_frame = ttk.Frame(grid_canvas)
@@ -1081,21 +1221,39 @@ class DkeffWindow(tk.Toplevel):
         self.out_lf.pack_forget()
 
         bot = self.bot_frame
-        self.status_label = ttk.Label(bot, text="Status: Ready. Load a file or enter data manually.")
+        self.status_label = ttk.Label(
+            bot,
+            text="Ready.  Fill in material properties and lab data, then click "
+                 "Generate dKeff Data  (step ③ → ④).")
         self.status_label.pack(side='top', fill='x', pady=(0, 5))
         ctrl = ttk.Frame(bot)
         ctrl.pack(side='top', fill='x')
         ttk.Label(ctrl, text="Output Filename:").pack(side='left', padx=(0, 5))
         ttk.Entry(ctrl, textvariable=self.output_filename_var).pack(
             side='left', fill='x', expand=True)
-        ttk.Button(ctrl, text="Validate Data",
-                   command=self._validate_grid_data).pack(side='left', padx=5)
+        widgets_mod.ToolTip(
+            ttk.Entry(ctrl),   # dummy — real tooltip on the entry below
+            "Name of the .dkout file written by the dkeff executable.")
+        btn_validate = ttk.Button(ctrl, text="Validate Data",
+                                  command=self._validate_grid_data)
+        btn_validate.pack(side='left', padx=5)
+        widgets_mod.ToolTip(btn_validate,
+            "Check that ΔK and da/dN values are numeric and strictly ascending.  "
+            "Rows with errors are highlighted in red.")
         self.generate_button = ttk.Button(
-            ctrl, text="Generate dKeff Data", command=self._run_dkeff)
+            ctrl, text="③ Generate dKeff Data", command=self._run_dkeff)
         self.generate_button.pack(side='left', padx=5)
+        widgets_mod.ToolTip(self.generate_button,
+            "Run the dkeff executable to apply Newman's closure correction.\n"
+            "The corrected ΔKeff vs da/dN data will appear in the output panel below.\n"
+            "Requires the dkeff executable path set via  File → Configure Executable Paths.")
         self.apply_button = ttk.Button(
-            ctrl, text="Apply to Main Window", command=self._apply_to_main, state='disabled')
+            ctrl, text="④ Apply to Main Window", command=self._apply_to_main, state='disabled')
         self.apply_button.pack(side='left', padx=5)
+        widgets_mod.ToolTip(self.apply_button,
+            "Copy the corrected ΔKeff / da/dN table into the main window's "
+            "Crack Growth tab (sets NTAB and CGR_TABLE).  "
+            "Also transfers Sy, Su, E, and ALP back to the Material tab.")
         ttk.Button(ctrl, text="Close", command=self.destroy).pack(side='right')
 
     def _apply_preset(self):
@@ -1648,6 +1806,13 @@ class BatchInputDialog(tk.Toplevel):
         self.result = None
         self.entries = {}
 
+        ttk.Label(self, wraplength=440, justify='left', padding="10 6 10 4",
+                  foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+                  text="One row per R-ratio found in the .lkpx file.  "
+                       "Enter the test Smax (MPa), specimen half-width W (mm), "
+                       "and thickness T (mm) used for that R-ratio dataset.  "
+                       "These values are written into the .dkin batch file headers.").pack(fill='x')
+
         canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
         sf = ttk.Frame(canvas, padding="10")
@@ -1655,7 +1820,7 @@ class BatchInputDialog(tk.Toplevel):
         canvas.create_window((0, 0), window=sf, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        for col, hdr in enumerate(["R-Ratio", "Smax", "Width (W)", "Thickness (T)"]):
+        for col, hdr in enumerate(["R-Ratio", "Smax (MPa)", "Width W (mm)", "Thickness T (mm)"]):
             ttk.Label(sf, text=hdr, font="-weight bold").grid(row=0, column=col, padx=5, pady=5)
         for i, r in enumerate(r_ratios, start=1):
             ttk.Label(sf, text=f"{r}").grid(row=i, column=0, sticky='w')
@@ -1740,9 +1905,13 @@ class CrackGrowthTableDialog(tk.Toplevel):
         self.row_widgets = []
 
         hint = ttk.Label(
-            self, padding=(10, 8),
-            text=("Enter (ΔKeff, da/dN) data points in ascending ΔKeff order.\n"
-                  "FASTRAN will write the first NTAB rows from this table."))
+            self, padding=(10, 8), justify='left', wraplength=480,
+            foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+            text=("Enter ΔKeff (MPa√m) and da/dN (m/cycle) pairs in strictly ascending "
+                  "ΔKeff order — FASTRAN interpolates between rows during the analysis.  "
+                  "NTAB in the Crack Growth tab is automatically set to the number of rows "
+                  "saved here, which overrides the Paris law constants (C1, C2).  "
+                  "Set NTAB = 0 in the Crack Growth tab to revert to the Paris law."))
         hint.pack(fill='x')
 
         body = ttk.Frame(self, padding=10)

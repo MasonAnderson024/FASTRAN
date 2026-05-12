@@ -48,7 +48,7 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         # Extract commonly used integers up front
         ntyp  = int_prefix(get_val('NTYP'))
         nfopt = int_prefix(get_val('NFOPT'))
-        nalp  = int(get_val('NALP'))
+        nalp  = int_prefix(get_val('NALP'))
         irate = int(get_val('IRATE'))
         ltyp  = int_prefix(get_val('LTYP'))
 
@@ -67,7 +67,7 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         lines.append(row(
             get_val('SYIELD'), get_val('SULT'), get_val('E'), get_val('ETA'),
             get_val('ALP'), get_val('BETAT'), get_val('BETAW'),
-            get_val('NALP'), get_val('NEP')
+            int_prefix(get_val('NALP')), int_prefix(get_val('NEP'))
         ))
 
         # ── Section 5: IRATE NGC CRKNGC ───────────────────────────────────────

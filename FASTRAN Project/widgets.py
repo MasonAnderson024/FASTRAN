@@ -34,14 +34,15 @@ class GeometryCanvas(tk.Frame):
         super().__init__(parent, borderwidth=1, relief="sunken")
 
         self.current_ntyp = None
+        self.current_dims = {}  # latest dim values pushed by the main GUI
 
         # View-toggle and export-target state
         self.show_plan    = tk.BooleanVar(value=True)
         self.show_section = tk.BooleanVar(value=True)
         self.export_target = tk.StringVar(value="Both")
 
-        # Wider figure: left = plan view, right = cross-section view
-        self.figure = Figure(figsize=(6, 2), dpi=100)
+        # Taller figure: top = plan view, bottom = cross-section view
+        self.figure = Figure(figsize=(5, 4.5), dpi=100)
         self.figure.patch.set_facecolor('#f0f0f0')
 
         self.ax = self.figure.add_subplot(121)
@@ -77,13 +78,20 @@ class GeometryCanvas(tk.Frame):
         # Set initial axis positions (both visible)
         self._update_view_layout()
 
-    def update_diagram(self, ntyp_id):
+    def update_diagram(self, ntyp_id, dims=None):
         """
         Clears the canvas and draws the schematic for the given NTYP ID.
 
         Args:
             ntyp_id (int): The FASTRAN geometry code (e.g. 1, 2, 5).
+            dims (dict, optional): Current dimension values keyed by FASTRAN variable
+                name (W, B, CI, CF, AI, AN, CN, RAD).  When provided the crack and
+                feature sizes in the schematic scale proportionally so the diagram
+                reflects the user's actual inputs.
         """
+        if dims is not None:
+            self.current_dims = dims
+
         self.ax.clear()
         self.ax.set_axis_off()
         self.ax.set_xlim(0, 100)
@@ -109,54 +117,51 @@ class GeometryCanvas(tk.Frame):
 
         if ntyp == 0:  # Surface Crack (Tension/Bending)
             self._draw_plate()
-            # Semi-elliptical surface crack on the front face (top)
-            self.ax.add_patch(patches.Ellipse((50, 90), 22, 6, color='red'))
+            c_w = self._crack_half_px(default=11) * 2  # 2c width
+            self.ax.add_patch(patches.Ellipse((50, 90), c_w, 6, color='red'))
             self._draw_tension_arrows()
-            self._add_label(50, 80, "2c")
-            self._add_label(28, 50, "a")
+            self._add_label(50, 80, f"2c={self._dim('CI', '?'):.4g}" if self._dim('CI') else "2c")
             self.ax.annotate("", xy=(20, 60), xytext=(20, 90),
                              arrowprops=dict(arrowstyle='<->', color='blue'))
+            self._add_label(15, 75, "B", color='blue')
 
-        elif ntyp == 1: # Center Crack Tension (M(T))
+        elif ntyp == 1:  # Center Crack Tension (M(T))
             self._draw_plate()
-            # Draw Center Crack
-            self.ax.add_patch(patches.Rectangle((40, 48), 20, 4, color='red', label='2a'))
-            self._add_label(50, 55, "2a")
-            self._add_label(50, 90, "Width (W)")
-            # Arrows for tension
+            a_px = self._crack_half_px(default=10)
+            self.ax.add_patch(patches.Rectangle((50 - a_px, 48), 2 * a_px, 4, color='red'))
+            self._add_label(50, 55, f"2a={self._dim('CI', '?'):.4g}" if self._dim('CI') else "2a")
+            self._add_label(50, 90, f"W={self._dim('W', '?'):.4g}" if self._dim('W') else "W")
             self._draw_tension_arrows()
 
-        elif ntyp == 2: # Compact Specimen C(T)
-            # Draw C(T) shape
+        elif ntyp == 2:  # Compact Specimen C(T)
             path_x = [10, 90, 90, 10, 10]
             path_y = [20, 20, 80, 80, 20]
-            self.ax.add_patch(patches.Polygon(list(zip(path_x, path_y)), closed=True, fill=False, edgecolor='black', linewidth=2))
-            # Holes
+            self.ax.add_patch(patches.Polygon(list(zip(path_x, path_y)), closed=True,
+                                              fill=False, edgecolor='black', linewidth=2))
             self.ax.add_patch(patches.Circle((25, 30), 5, fill=False, edgecolor='black'))
             self.ax.add_patch(patches.Circle((25, 70), 5, fill=False, edgecolor='black'))
-            # Crack
-            self.ax.add_patch(patches.Rectangle((10, 48), 40, 2, color='red'))
-            self._add_label(30, 52, "a")
+            a_px = self._crack_full_px(default=40)
+            self.ax.add_patch(patches.Rectangle((10, 48), a_px, 2, color='red'))
+            self._add_label(10 + a_px / 2, 53, f"a={self._dim('CI', '?'):.4g}" if self._dim('CI') else "a")
             self._add_label(95, 50, "W", color='black')
 
-        elif ntyp == 3: # Single Edge Crack (Tension)
+        elif ntyp == 3:  # Single Edge Crack (Tension)
             self._draw_plate()
-            # Crack from left edge
-            self.ax.add_patch(patches.Rectangle((10, 48), 30, 2, color='red'))
-            self._add_label(25, 55, "a")
+            a_px = self._crack_full_px(default=30)
+            self.ax.add_patch(patches.Rectangle((10, 48), a_px, 2, color='red'))
+            self._add_label(10 + a_px / 2, 55, f"a={self._dim('CI', '?'):.4g}" if self._dim('CI') else "a")
             self._draw_tension_arrows()
 
-        elif ntyp == 4: # Single Edge Bend (SE(B))
-            # Plate
-            self.ax.add_patch(patches.Rectangle((10, 30), 80, 40, fill=False, edgecolor='black', linewidth=2))
-            # Crack from bottom
-            self.ax.add_patch(patches.Rectangle((48, 30), 4, 20, color='red'))
-            # Support rollers
+        elif ntyp == 4:  # Single Edge Bend (SE(B))
+            self.ax.add_patch(patches.Rectangle((10, 30), 80, 40,
+                                                fill=False, edgecolor='black', linewidth=2))
+            a_px = self._crack_full_px(lo=4, hi=36, default=20)
+            self.ax.add_patch(patches.Rectangle((48, 30), 4, a_px, color='red'))
             self.ax.add_patch(patches.Circle((20, 25), 3, color='blue'))
             self.ax.add_patch(patches.Circle((80, 25), 3, color='blue'))
-            # Load arrow
             self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
-            self._add_label(55, 40, "a")
+            self._add_label(56, 30 + a_px / 2,
+                            f"a={self._dim('CI', '?'):.4g}" if self._dim('CI') else "a")
 
         elif ntyp == 5: # Pressurized Cylinder
             # Draw Cylinder Cross section
@@ -183,11 +188,13 @@ class GeometryCanvas(tk.Frame):
 
         elif ntyp == 8:  # Double-Edge Crack Tension D(T)
             self._draw_plate()
-            self.ax.add_patch(patches.Rectangle((10, 48), 22, 4, color='red'))
-            self.ax.add_patch(patches.Rectangle((68, 48), 22, 4, color='red'))
+            a_px = self._crack_full_px(lo=4, hi=35, default=22)
+            self.ax.add_patch(patches.Rectangle((10, 48), a_px, 4, color='red'))
+            self.ax.add_patch(patches.Rectangle((90 - a_px, 48), a_px, 4, color='red'))
             self._draw_tension_arrows()
-            self._add_label(20, 56, "a")
-            self._add_label(80, 56, "a")
+            lbl = f"a={self._dim('CI', '?'):.4g}" if self._dim('CI') else "a"
+            self._add_label(10 + a_px / 2, 56, lbl)
+            self._add_label(90 - a_px / 2, 56, lbl)
 
         elif ntyp == 99:  # User-Defined Geometry
             self.ax.add_patch(patches.Rectangle((20, 30), 60, 40, fill=False,
@@ -195,35 +202,46 @@ class GeometryCanvas(tk.Frame):
             self.ax.text(50, 50, "User-Defined Geometry\n(Fc vs c/w table)",
                          ha='center', va='center', fontsize=10, fontstyle='italic')
 
-        elif ntyp == -1: # Corner Crack at Hole
+        elif ntyp == -1:  # Corner Crack at Hole
             self._draw_plate()
-            # Draw Hole
-            self.ax.add_patch(patches.Circle((50, 50), 12, fill=False, edgecolor='black'))
-            # Draw Corner Crack (Triangle-ish)
-            self.ax.add_patch(patches.Polygon([[62, 50], [70, 50], [62, 58]], color='red'))
-            self._add_label(72, 55, "c")
-            self._add_label(50, 30, "Dia")
+            r_px = self._hole_px(default=12)
+            a_px = self._crack_full_px(lo=3, hi=25, default=8)
+            self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
+            cx = 50 + r_px
+            self.ax.add_patch(patches.Polygon(
+                [[cx, 50], [cx + a_px, 50], [cx, 50 + a_px]], color='red'))
+            self._add_label(cx + a_px + 4, 53, f"c={self._dim('CI', '?'):.4g}" if self._dim('CI') else "c")
+            self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
         elif ntyp == -2:  # Two Corner Cracks at Hole
             self._draw_plate()
-            self.ax.add_patch(patches.Circle((50, 50), 12, fill=False, edgecolor='black'))
-            self.ax.add_patch(patches.Polygon([[62, 50], [70, 50], [62, 58]], color='red'))
-            self.ax.add_patch(patches.Polygon([[38, 50], [30, 50], [38, 58]], color='red'))
-            self._add_label(50, 30, "Dia")
+            r_px = self._hole_px(default=12)
+            a_px = self._crack_full_px(lo=3, hi=20, default=8)
+            self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
+            cx = 50 + r_px
+            self.ax.add_patch(patches.Polygon([[cx, 50], [cx + a_px, 50], [cx, 50 + a_px]], color='red'))
+            cx2 = 50 - r_px
+            self.ax.add_patch(patches.Polygon([[cx2, 50], [cx2 - a_px, 50], [cx2, 50 + a_px]], color='red'))
+            self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
         elif ntyp == -3:  # One Through Crack at Hole
             self._draw_plate()
-            self.ax.add_patch(patches.Circle((50, 50), 10, fill=False, edgecolor='black'))
-            self.ax.add_patch(patches.Rectangle((60, 49), 25, 2, color='red'))
-            self._add_label(72, 55, "c")
-            self._add_label(50, 32, "Dia")
+            r_px = self._hole_px(default=10)
+            a_px = self._crack_full_px(lo=4, hi=30, default=20)
+            self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Rectangle((50 + r_px, 49), a_px, 2, color='red'))
+            self._add_label(50 + r_px + a_px / 2, 55,
+                            f"c={self._dim('CI', '?'):.4g}" if self._dim('CI') else "c")
+            self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
         elif ntyp == -4:  # Two Through Cracks at Hole
             self._draw_plate()
-            self.ax.add_patch(patches.Circle((50, 50), 10, fill=False, edgecolor='black'))
-            self.ax.add_patch(patches.Rectangle((60, 49), 25, 2, color='red'))
-            self.ax.add_patch(patches.Rectangle((15, 49), 25, 2, color='red'))
-            self._add_label(50, 32, "Dia")
+            r_px = self._hole_px(default=10)
+            a_px = self._crack_full_px(lo=4, hi=28, default=18)
+            self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
+            self.ax.add_patch(patches.Rectangle((50 + r_px, 49), a_px, 2, color='red'))
+            self.ax.add_patch(patches.Rectangle((50 - r_px - a_px, 49), a_px, 2, color='red'))
+            self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
         elif ntyp == -5:  # One Surface Crack at Center of Hole (bore)
             self._draw_plate()
@@ -377,6 +395,55 @@ class GeometryCanvas(tk.Frame):
                                       theta1=theta1, theta2=theta2,
                                       color='black', linewidth=2))
 
+    # --- DIMENSION HELPERS ---
+    # These convert real-world dims stored in self.current_dims into canvas-pixel
+    # lengths so the schematic scales with user input.  The plan-view plate spans
+    # x=10..90 (80 units wide) and y=10..90 (80 units tall).
+
+    def _dim(self, key, default=0.0):
+        """Return a dimension value, falling back to *default* when absent or zero."""
+        v = self.current_dims.get(key, default)
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            v = default
+        return v if v > 0 else default
+
+    def _crack_half_px(self, lo=3, hi=38, default=10):
+        """Half-crack length in plan-view canvas pixels (CI / W * 40)."""
+        w = self._dim('W'); ci = self._dim('CI')
+        if w > 0 and ci > 0:
+            return max(lo, min(hi, ci / w * 40))
+        return default
+
+    def _crack_full_px(self, lo=4, hi=76, default=30):
+        """Full crack length from one edge (CI / W * 80)."""
+        w = self._dim('W'); ci = self._dim('CI')
+        if w > 0 and ci > 0:
+            return max(lo, min(hi, ci / w * 80))
+        return default
+
+    def _depth_px(self, lo=5, hi=70, default=24):
+        """Crack depth in cross-section canvas pixels (AI / B * 80)."""
+        b = self._dim('B'); ai = self._dim('AI')
+        if b > 0 and ai > 0:
+            return max(lo, min(hi, ai / b * 80))
+        return default
+
+    def _hole_px(self, lo=5, hi=28, default=12):
+        """Hole radius in canvas pixels (RAD / W * 80)."""
+        w = self._dim('W'); rad = self._dim('RAD')
+        if w > 0 and rad > 0:
+            return max(lo, min(hi, rad / w * 80))
+        return default
+
+    def _final_crack_px(self, lo=4, hi=76, default=40):
+        """Final crack half-length in plan-view canvas pixels (CF / W * 40)."""
+        w = self._dim('W'); cf = self._dim('CF')
+        if w > 0 and cf > 0:
+            return max(lo, min(hi, cf / w * 40))
+        return default
+
     # --- CROSS-SECTION DRAWING ---
 
     def _draw_cross_section(self, ntyp):
@@ -387,9 +454,12 @@ class GeometryCanvas(tk.Frame):
 
         if ntyp == 0:   # Surface Crack – semi-ellipse from top face
             self._cs_rect(ax)
-            self._cs_surface_crack(ax, cx=50, face='top')
+            c_w = self._crack_half_px(default=14) * 2
+            a_d = self._depth_px(default=24)
+            self._cs_surface_crack(ax, cx=50, face='top', crack_w=c_w, crack_h=a_d)
             self._cs_ann_B(ax)
-            self._cs_label(ax, 50, 94, "2c", color='red')
+            lbl_2c = f"2c={self._dim('CI', '?'):.4g}" if self._dim('CI') else "2c"
+            self._cs_label(ax, 50, 94, lbl_2c, color='red')
 
         elif ntyp == 1:  # Center Crack Tension – through crack at mid-width
             self._cs_rect(ax)
@@ -634,10 +704,10 @@ class GeometryCanvas(tk.Frame):
 
     # --- VIEW LAYOUT ---
 
-    # Normalized [left, bottom, width, height] positions for each display mode.
-    _POS_BOTH_PLAN    = [0.02, 0.05, 0.45, 0.84]
-    _POS_BOTH_SECTION = [0.53, 0.05, 0.45, 0.84]
-    _POS_SINGLE       = [0.04, 0.05, 0.92, 0.84]
+    # Normalized [left, bottom, width, height] positions — stacked vertically.
+    _POS_BOTH_PLAN    = [0.05, 0.52, 0.90, 0.43]  # top half
+    _POS_BOTH_SECTION = [0.05, 0.05, 0.90, 0.43]  # bottom half
+    _POS_SINGLE       = [0.05, 0.05, 0.90, 0.90]
 
     def _update_view_layout(self):
         """Reposition / hide axes based on the Show checkboxes; prevent both hidden."""

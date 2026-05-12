@@ -14,241 +14,412 @@ from tkinter import ttk, messagebox
 
 HELP_CONTENT = """
 ================================
- FASTRAN GUI - Quick Help Guide
+ FASTRAN GUI — Quick Help Guide
 ================================
 
-This guide provides a simplified explanation of the input fields available in the GUI.
-For more detailed information, please consult the "Short-User Guide-FASTRAN Ver.5.78f.pdf".
+This guide provides a simplified explanation of the input fields and workflow
+for each tab in the GUI.  For the complete technical reference, consult:
+  "Short-User Guide-FASTRAN Ver.5.78f.pdf"
+
+New users should work left-to-right through the five tabs in order:
+  1. Geometry → 2. Material → 3. Loading → 4. Crack Growth → 5. Sensitivity
+
+Then click "RUN ANALYSIS" at the bottom of the window.
 
 -----------------------------------------------------------------------------
-  Tab 1: General & Material
+  Project Management
 -----------------------------------------------------------------------------
 
-[ Spectrum & Material Files ]
+The FASTRAN GUI organises each analysis as a self-contained *project folder*
+that holds all input files, output files, and settings in one place.
 
-  Spectrum File (SPECTRA)
-  - The filename of the spectrum loading file.
-  - This is only used when the Loading Option (NFOPT) is set to 5, 8, 9, or 10.
-  - For all other loading options, you can use a cstamp filename (e.g., cstamp.txt).
+  File > New Project
+  - Creates a fresh project folder (input/, output/, config/ sub-folders).
+  - You must create or open a project before the RUN button is enabled.
 
-  *Important:* If you select a loading option that uses a spectrum file
-  (NFOPT 5, 8, 9, or 10), you must provide a path to a correctly formatted spectrum
-  file. Using the default cstamp.txt will cause the analysis to fail.
+  File > Open Project
+  - Reopens an existing project folder and restores the last saved GUI state.
 
-  Material Title (MAT)
-  - A descriptive name for the material (up to 60 characters).
+  File > Save Project State
+  - Writes the current values of all GUI fields to config/settings.json so
+    they are restored exactly the next time you open this project.
 
-[ Material Properties ]
+  File > Import Legacy .txt / .in
+  - Reads an old-style FASTRAN text input file and populates the GUI fields
+    so you can view and edit it using the modern interface.
+
+  Tools > Export Results to CSV
+  - Converts the most recent .fou output file to a comma-separated spreadsheet.
+
+  Tools > Compare Runs / Post-Processor
+  - Opens a multi-run overlay window to plot results from several .fou files
+    on the same axes.
+
+-----------------------------------------------------------------------------
+  Material Library
+-----------------------------------------------------------------------------
+
+The Material Library stores frequently used sets of material properties as a
+JSON file (materials_library.json) in the project folder.
+
+  On the Material tab:
+    "Load Material..."
+    - Choose a saved material by name; all property fields are filled in.
+
+    "Save Current to Library..."
+    - Prompts for a name and writes every material field (including crack-growth
+      tables, NALP, NEP, ALP, BETAT, BETAW) to the library for future reuse.
+
+  Tip: After running the dkeff Material Data Generator and clicking
+  "Apply to Main Window", save the result to the library so you never have
+  to re-run dkeff for the same dataset.
+
+-----------------------------------------------------------------------------
+  Tab 1 — Geometry
+-----------------------------------------------------------------------------
+
+Select the specimen geometry that most closely matches your physical coupon or
+structural detail.  The schematic updates in real time as you type.
+
+[ Specimen Type (NTYP) ]
+
+  The drop-down lists all 25 supported FASTRAN geometry types.  Common choices:
+
+    0  — Surface crack in a plate (tension or bending)
+    1  — Center-crack tension M(T) specimen
+    2  — Compact C(T) or ESE(T) specimen
+    3  — Single-edge crack tension SE(T)
+    4  — Single-edge crack bend SE(B)
+   -1  — One corner crack at a circular hole
+   -2  — Two corner cracks at a circular hole (symmetric)
+   -3  — One through crack at a circular hole
+   -4  — Two through cracks at a circular hole (symmetric)
+   -12 — Lap-splice joint with through cracks (riveted structure)
+   99  — User-defined geometry (Fc vs c/w table)
+
+  Changing NTYP may reveal additional "Special Inputs" fields (e.g., Hole
+  Radius, Rivet Pitch) that are required for that geometry.
+
+[ Specimen Dimensions ]
+
+  W  — Width (or half-width for M(T) specimens). Same units as CI, CF.
+  B  — Full plate thickness (maps to T in the FASTRAN input file).
+  CI — Initial crack length c_i. Must be less than CF.
+  AI — Initial crack depth a_i (for surface / corner cracks only).
+  CN — Starter notch length c_n. Set CN = CI if there is no pre-cracking stage.
+  AN — Starter notch depth a_n (surface / corner crack notches).
+  HN — Starter notch half-height h_n.
+  RAD  — Radius of a circular hole or semi-circular edge notch.
+  RADF — Fastener radius. 0 = open hole; set equal to RAD for a tight fastener.
+  CF — Final crack length at which the analysis stops.
+
+  *Note:* All dimensions must be in consistent units (all SI or all English).
+  Use the Unit Conversion (LUNIT) field on the Loading tab to convert.
+
+[ Schematic Views ]
+
+  The geometry schematic shows two stacked views:
+    Plan View  — Looking down on the specimen from above (crack length direction).
+    Section A–A — Through-thickness cross-section (crack depth direction).
+
+  Use the checkboxes above the schematic to show / hide each view.
+  The "Save Image" button exports the current schematic as a PNG or PDF.
+
+-----------------------------------------------------------------------------
+  Tab 2 — Material
+-----------------------------------------------------------------------------
+
+Enter the mechanical properties of the material being analysed.
+
+[ Properties ]
+
+  Material Name (MAT)
+  - Free-text label (up to 60 characters) that appears in the FASTRAN output
+    header for identification.
 
   Yield Stress (SYIELD)
-  - The stress at which the material begins to deform plastically (0.2% offset).
+  - 0.2% offset yield strength in the selected stress units.
 
   Ultimate Strength (SULT)
-  - The maximum stress a material can withstand before breaking.
+  - Ultimate tensile strength.  Must be greater than SYIELD; the GUI will
+    prevent the run if SYIELD ≥ SULT.
 
   Elastic Modulus (E)
-  - A measure of the material's stiffness.
+  - Young's modulus (stiffness).
 
   Poisson's Ratio (ETA)
-  - Describes the material's tendency to deform in perpendicular directions when stretched.
-  - Use 0 for plane stress conditions.
+  - Use 0 for plane-stress analyses (thin sheet/plate).
+  - Use the actual Poisson's ratio (e.g., 0.33 for aluminium) for plane-strain.
 
-  *Note on Stress Limits:* FASTRAN calculates a Flow Stress (Sflow) as the average of
-  the Yield and Ultimate strengths. Ensure your maximum applied stress (Smax) in any
-  loading sequence is less than this value to avoid calculation errors.
+  *Flow Stress warning:* FASTRAN computes Sflow = (SYIELD + SULT) / 2.
+  If the maximum applied stress in your load history exceeds Sflow, the
+  net-section yielding failure mode will trigger.
 
-[ Constraint Factors ]
+[ Constraint & Plasticity Options ]
 
-  Tensile Constraint (ALP)
-  - A factor that defines the state of stress at the crack tip.
-  - Common values: 1.0 for plane stress, 3.0 for plane strain.
+  Constraint Factor (ALP)
+  - Controls the triaxiality of stress at the crack tip.
+  - 1.0 = plane stress (thin sheet)
+  - 1.73 = Irwin plane-strain estimate
+  - 3.0 = full plane strain (thick section)
+  - For mixed behaviour, use the default 1.8 and let NALP=1 adjust it.
 
-  Compressive Constraint (BETAT / BETAW)
-  - Factors for compressive yielding. BETAT is for the material ahead of the
-    crack tip, and BETAW is for the material in the crack wake.
+  Compressive Tip Constraint (BETAT)
+  - Constrains the compressive yield zone ahead of the crack tip.
+  - Typically 1.0.  Reduce slightly (e.g., 0.5–0.9) only for very thin sheets.
 
-[ Material Options ]
+  Compressive Wake Constraint (BETAW)
+  - Constrains compressive yielding in the crack wake (closure contact region).
+  - Typically 1.0.
 
-  Constraint Opt (NALP)
-  - Defines how the constraint factor (ALP) is treated.
-  - 0: Constant -> Uses the user-input ALP value throughout the analysis.
-  - 1: Variable -> The program calculates a variable ALP based on crack growth rates.
+  Constraint Option (NALP)
+  - 0: Constant — ALP is fixed at the user-input value throughout the analysis.
+  - 1: Variable — ALP transitions automatically between ALP1 and ALP2 based on
+    crack-growth rate (da/dN).  RATE1, ALP1, RATE2, ALP2 must be set on the
+    Crack Growth tab.  Use this when the specimen transitions from flat to slant
+    fracture during the test.
 
-  Plasticity Opt (NEP)
-  - Defines the plasticity correction method for the stress intensity factor.
-  - 0: Elastic -> No plasticity correction.
-  - 1: Plasticity-Corrected -> Modifies the crack length by adding a portion of
-    the *cyclic* plastic zone. (RECOMMENDED)
-  - 2: Closure Corrected -> Modifies the crack length by adding a portion of the
-    *monotonic* plastic zone. (Use with caution)
+  Plasticity Option (NEP)
+  - 0: Elastic — no plasticity correction to the stress-intensity factor.
+  - 1: Cyclic plastic zone correction (RECOMMENDED) — adds a fraction of the
+    cyclic plastic zone to the crack length.  This is Newman's standard method.
+  - 2: Monotonic plastic zone correction — uses the larger monotonic zone.
+    Use with caution; it is less physically motivated for fatigue loading.
 
------------------------------------------------------------------------------
-  Tab 2: Crack Growth
------------------------------------------------------------------------------
+[ Material Library ]
 
-[ Growth Rate Options ]
-
-  IRATE
-  - Defines the number of crack growth rate curves to use.
-  - 1: One curve for both crack length and depth.
-  - 2: Two independent curves (one for length, one for depth).
-  - 4: Four independent curves (small and large cracks for both length and depth).
-
-  NGC / CRKNGC
-  - Enables the transition from small-crack to large-crack behavior
-    (only used when IRATE=4).
-  - NGC=1 enables the transition.
-  - CRKNGC is the crack size at which the transition occurs.
-
-[ Growth Rate Equation & Properties ]
-
-  C1-C7, KF, m
-
-  Steady Crack Growth
-  - C1: Scaling constant that defines the vertical position of the crack-growth
-    plot line; a higher C1 means faster growth for a given stress level
-  - C2: Slope of the central, straight-line portion of the da/dN vs dKeff line
-    on a log-log plot
-
- Threshold Behavior: Define Crack Growth Threshold (dK0)
-  - C3: Baseline threshold
-  - C4: Adjusts the baseline based on stress ratio (R)
-  - C7: Controls how sharply the curve bends as it approaches threshold; a high
-    value creates an abrupt "knee" where crack growth rates plumit to 0
-
- Fracture Behavior
-  - C5: Cyclic toughness
-  - C6: Fracture power; controls how abruptly the crack growth rate accelerates
-    as Kmax approaches C5
-  - KF: Elastic-plastic fracture toughness
-  - m: Accounts for geometry and stress state of the componenet
-
-  Equation (NEQN)
-  - Selects the crack growth law to be used.
-  - 0: FASTRAN Equation
-  - 1: NASGRO Equation
-
-[ Crack Growth Table (NTAB > 0) ]
-
-  Num. Points (NTAB)
-  - If greater than 1, the program will use a table of (dK_eff, da/dN) data
-    instead of the equation. NTAB is the number of points in the table.
-
-  NDKTH
-  - Defines how the table data is interpreted and applied.
-  - 0: Direct table lookup.
-  - 1: FASTRAN tabular form, which modifies the table data with threshold and
-    fracture properties.
-  - 2: NASGRO tabular form, similar to option 1 but uses a different formulation.
-
-[ Transition Parameters (NALP = 1 only) ]
-
-  RATE1, ALP1, RATE2, ALP2, etc.
-  - These parameters define the crack growth rates (RATE1, RATE2) at which the
-    transition from flat-to-slant crack growth occurs, and the corresponding
-    constraint factors (ALP1, ALP2).
-
- *Important:* The data in this table must be in strictly ascending order for both
- the dK_eff and da/dN columns. Duplicate or decreasing values will cause an error in FASTRAN.
+  Use "Load Material..." and "Save Current to Library..." to store and recall
+  material property sets (including crack-growth data).
 
 -----------------------------------------------------------------------------
-  Tab 3: Geometry & Loading
+  Tab 3 — Loading
 -----------------------------------------------------------------------------
 
-[ Specimen & Crack Geometry ]
+Choose how the fatigue load is applied to the specimen.
 
-  Specimen Type (NTYP)
-  - Defines the geometry of the cracked component (e.g., Center Crack, Surface Crack, Crack at Hole).
+[ Loading Type (NFOPT) ]
 
-  W, T, CI, AI, CF, RAD
-  - W: Width (or half-width for middle-crack tension specimens)
-  - T: Thickness
-  - CI: Initial crack length
-  - AI: Initial crack depth (for surface/corner cracks)
-  - CF: Final crack length at which the analysis stops.
-  - RAD: Radius of a hole or notch.
+  0  — Constant Amplitude: simple Smax / R sine-wave cycling.
+  1  — Block/Flight Loading: user-defined variable-amplitude block sequence
+       (use "Edit Block Loading..." to build the sequence).
+  2  — TWIST transport aircraft spectrum (requires spectrum file).
+  3  — Mini-TWIST shortened transport spectrum (requires spectrum file).
+  4  — FALSTAFF fighter aircraft spectrum (requires spectrum file).
+  5  — Short FALSTAFF (requires spectrum file).
+  6  — Gaussian random spectrum (requires spectrum file).
+  7  — Felix/28 helicopter spectrum (requires spectrum file).
+  8  — External spectrum file — general purpose (requires spectrum file).
+  9  — External spectrum file — NASALOAD format (requires spectrum file).
+  10 — External spectrum file — alternate format (requires spectrum file).
 
-  CN, AN, HN
-  - Dimensions of the starter notch from which a crack initiates.
-  - If CN = CI, there is no pre-cracking stage.
+  *Spectrum files (NFOPT ≥ 2):*  You must provide a correctly formatted
+  spectrum file.  Browse for an existing file or use "Edit Spectrum..." to
+  create one using the built-in Spectrum Creator.  Using a placeholder
+  filename will cause the FASTRAN run to fail.
 
-[ Loading ]
+[ Stress Parameters ]
 
-  Loading Option (NFOPT)
-  - Defines the type of loading to be applied.
-  - 0: Constant-Amplitude (simple max/min loading).
-  - 1: Variable/Block Loading (user-defined blocks of loads).
-  - 2-7, 10: Standardized spectra (e.g., TWIST, FALSTAFF).
-  - 8, 9: Spectra read from an external file.
+  Smax
+  - Maximum applied stress for NFOPT=0 (constant amplitude) and for the
+    pre-cracking stage (Section 15).
 
-  Pre-Crack Loading (SMAX / SMIN)
-  - The constant-amplitude max and min stress levels used to grow the crack
-    from the initial notch (CN) to the initial crack size (CI).
-  - These inputs are required but are only used if CN is different from CI.
+  R  — Stress ratio R = Smin / Smax.  Smin is computed as Smax × R.
 
-  Primary Loading (MAXSEQ, SPEAK, SMEAN, etc.)
-  - These fields control the application of the primary fatigue loading defined by NFOPT.
-  - SPEAK: The highest stress in a spectrum, used to scale the spectrum data.
-  - SMEAN: The mean stress for certain spectra like TWIST.
-  - MAXSEQ: Total number of blocks or flights in a sequence.
+  Frequency (FW)
+  - Loading frequency in Hz.  Stored for reference; not used in crack-growth
+    calculations unless a rate-dependent growth law is active.
 
-[ Output & Advanced Options ]
+  Invert / Clip (label changes with NFOPT)
+  - NFOPT=0/1: 0=normal, 1=invert the sign of all stresses.
+  - NFOPT=2/3 (TWIST): clip level — 0=none, 2–5=Levels II–V.
+  - Other NFOPT: see the user guide for the spectrum-specific interpretation.
+    The label above this field updates automatically when NFOPT is changed.
 
-  Output Options
-  These parameters control how frequently the results are printed to the output
-    file. There are two main methods: printing by analysis step (NPRT) or printing
-      by a physical crack increment (DCPR).
+  SPEAK — Peak scaling stress for spectrum loading (NFOPT 4–10).  All
+          spectrum stress values are multiplied by SPEAK.
+  SMEAN — Mean stress offset for TWIST / Mini-TWIST / Gaussian (NFOPT=2,3,6).
 
-  NPRT (Print by Step Interval)
-  - If NPRT > 0: The program will print a line of results every NPRT-th analysis increment.
-  - If NPRT = 0: The program switches to printing based on the crack length,
-    using the DCPR value below. This is the recommended mode for smooth real-time plotting.
+[ Spectrum File ]
 
-  DCPR (Print by Crack Increment)
-  - Defines the specific crack length increment (e.g., 0.01) at which results are printed.
-  - This is only active when NPRT is set to 0.
+  Enter the filename of the spectrum file in the project's input/ folder,
+  or use "Browse..." to locate it.  "Edit Spectrum..." opens the Spectrum
+  Creator to build a new spectrum from scratch.
 
-  Detailed Internal Log (For Debugging)
-  These parameters control an optional, highly detailed log for advanced
-  analysis and debugging. For most runs, these can be ignored.
+[ Block Loading (NFOPT=1) ]
 
-  NIPT (Internal Log Activation)
-  - If NIPT > 0: Enables the detailed log, which prints internal data like
-    plastic zone size and contact stresses.
-  - If NIPT = 0: Disables this detailed log. This is the normal setting.
+  "Edit Block Loading..." opens the Block Editor where you define the number
+  of load levels, stress levels, and repeat counts for each block or flight.
 
-  LSTEP (Internal Log Detail)
-  - Defines how many load steps are shown within the detailed NIPT log.
-  - This is only active when NIPT is greater than 0.
+[ Specimen & Loading Options (Section 10) ]
 
-  LFAST
-  - Selects the crack-closure model. Option 0 is the standard, most common choice.
+  LTYP  — Loading sub-type for certain geometries.
+           0: Remote tension (input S).
+           1: Remote bending (input outer-fibre stress Sb).
+           2: Combined tension + bending (input S and γ = Sb/S).
 
-  Threshold Test (KTH)
-  - Enables a load-reduction threshold test instead of a standard fatigue analysis.
-  - This is a special-purpose test, and should typically be left at 0 for normal analyses.
+  LFAST — Crack-closure model.
+           0: Full Newman crack-closure model (standard — most accurate).
+           1: SOBAR equivalent (faster for long runs).
+           2–4: Special closure options for advanced users.
+
+  KCONST — 0: Apply remote stress as loading (normal).
+            1: Apply K (stress-intensity factor) directly — NTYP=1 or 2 only.
+
+  NS    — Number of notch elements (≥1 for notch only; ≥2 for notch at hole).
+
+  NTCMAX — 0: Normal notch constraint.
+            1: First cycle is plane-stress (ALP=1) for negative-NTYP geometries.
+
+[ Proof Test / Constant So (Section 16) ]
+
+  NRC, DVALUE, NCYCLE1, NCYCLE2
+  - Used to simulate a proof-test overload before or after the main fatigue
+    cycling.  For most standard crack-growth analyses, leave these at 0.
 
 -----------------------------------------------------------------------------
-  Tools: Material Data Generator (dkeff)
+  Tab 4 — Crack Growth
+-----------------------------------------------------------------------------
+
+Define the material crack-growth behaviour.  Either use the Paris law
+equation (C1–C7) or load tabular ΔKeff / da/dN data.
+
+[ Model Option (IRATE) ]
+
+  1 — Single law: one da/dN curve used for both crack length (c) and depth (a).
+  2 — Two independent laws: separate curves for the c- and a-directions.
+  4 — Small/large crack transition: four curves (small and large, c and a).
+
+  NGC / CRKNGC (IRATE=4 only)
+  - NGC=1 enables the small-to-large crack transition.
+  - CRKNGC is the transition crack size; cracks smaller than this use the
+    small-crack law.  Typical value: 0.00025 m (0.01 in).
+
+[ Paris Law Constants (C1–C7) ]
+
+  The FASTRAN crack-growth equation is:
+    da/dN = C1 · ΔKeff^C2 · [threshold term] · [fracture term]
+
+  Steady-state growth:
+    C1 — Scaling coefficient (vertical position on a log-log da/dN plot).
+         A higher C1 means faster growth at any given ΔK.
+    C2 — Slope exponent on the log-log plot.
+
+  Threshold behaviour (set C3=C4=C7=0 to disable):
+    C3 — Baseline threshold constant.
+         ΔKo = C3·(1−R)^C4  (if C4 > 0)
+         ΔKo = C3·(1+C4·R) (if C4 < 0)
+    C4 — R-ratio modifier for the threshold.
+    C7 — Sharpness of the threshold knee.  Higher values create an abrupt
+         cut-off (crack won't grow below ΔKo).
+
+  Fracture behaviour (set C5=0 to use KF/m instead):
+    C5 — Cyclic fracture toughness.  Set to 9999 to use KF and m.
+    C6 — Power on the fracture term (controls how abruptly growth accelerates
+         as Kmax approaches C5).
+    KF — Elastic-plastic fracture toughness.  Used with m to compute KIe.
+    m  — 0=brittle (LEFM), 1=fully ductile.
+
+  Equation (NEQN):
+    0 — FASTRAN equation (standard).
+    1 — NASGRO equation (alternate formulation).
+
+[ Tabular Data (NTAB > 0) ]
+
+  When NTAB > 0, the table of (ΔKeff, da/dN) data *overrides* the C1–C7
+  constants.  The da/dN preview plot switches from the Paris curve to the
+  tabular points automatically.
+
+  NTAB  — Number of data points in the table.  Set via "Edit Table..." button.
+  NDKTH — 0: direct table lookup.
+           1: FASTRAN tabular form (applies threshold / fracture corrections).
+           2: NASGRO tabular form.
+
+  *Tip:* Use Tools > Material Data Generator (dkeff) to convert raw lab data
+  (ΔK vs da/dN from an ASTM E647 test) into a properly corrected ΔKeff table,
+  then click "Apply to Main Window" to import it here automatically.
+
+[ Output Options (Section 9) ]
+
+  NPRT — Output interval.  Negative value: print every |NPRT| crack increments
+         (recommended for smooth post-processing plots).  Positive: print every
+         NPRT analysis steps.  0: use DCPR.
+  DCPR — Crack-growth increment (e.g., 0.0001 m) at which results are printed
+         when NPRT = 0.
+  NIPT — 0: internal closure log off (normal).  >0: print detailed internal data
+         every NIPT increments (debugging only).
+  LSTEP — Load steps per NIPT printout (usually 1).
+  NDKE — 0: print elastic ΔK.  1: print effective ΔK (ΔKeff).
+
+[ Variable Constraint Transition (NALP=1 only) ]
+
+  When NALP=1 is selected on the Material tab, you must provide the rates and
+  corresponding constraint factors that define the flat-to-slant transition:
+
+  RATE1 / ALP1 / BETAT1 / BETAW1
+  - Transition onset: at da/dN = RATE1, ALP shifts from the initial value to ALP1.
+
+  RATE2 / ALP2 / BETAT2 / BETAW2
+  - Transition complete: at da/dN = RATE2, ALP reaches ALP2.
+  - RATE2 must be greater than RATE1.
+
+  Typical aluminium values:
+    RATE1=1e-7 m/cycle, ALP1=2.0, RATE2=2.5e-6 m/cycle, ALP2=1.0
+
+-----------------------------------------------------------------------------
+  Tab 5 — Sensitivity
+-----------------------------------------------------------------------------
+
+The Sensitivity tab runs FASTRAN repeatedly while sweeping one input variable
+over a range.  The result is a parametric "design curve" showing how the
+predicted fatigue life (cycles to failure) changes with that variable.
+
+  Sweep Parameter — Choose which variable to vary (e.g., CI, CF, Smax, W).
+  Min / Max / Steps — Define the sweep range and the number of evenly spaced
+    points.
+
+  Click "Run Sensitivity Analysis" to launch the batch run.  Progress is shown
+  in the status bar.  Results appear as a line chart on the right side.
+
+  "Export Design Curve CSV" saves the (parameter, cycles) pairs to a file.
+
+  Tips:
+  - A sweep over CI (initial crack size) shows how sensitive life is to
+    initial flaw assumptions — important for inspection planning.
+  - A sweep over Smax shows the load-life relationship at a glance.
+  - Run a full analysis on Tab 4 first to confirm the baseline case runs
+    cleanly before launching a sensitivity sweep.
+
+-----------------------------------------------------------------------------
+  Tools — Material Data Generator (dkeff)
 -----------------------------------------------------------------------------
 
 The dkeff tool converts raw fatigue crack-growth test data into the effective
 stress-intensity-factor range (ΔKeff) vs. crack-growth-rate (da/dN) table that
-FASTRAN's Section 7b uses.
+FASTRAN uses in Section 7b.
 
-Open it from the main window via Tools > Material Data Generator (DkEff)...
+Open it from the main window via  Tools > Material Data Generator (DkEff)...
 
 [ Executable Versions ]
 
   dkeff13 (Legacy)
-  - Older protocol: stdin sequence is IKEFF (=1 for file input), then test type,
+  - Older protocol: stdin sequence is IKEFF (=1 for file input), test type,
     input filename, output filename.
 
   dkeff21f (New)
   - Updated protocol: stdin sequence is test type, input filename, output filename
     (the IKEFF prompt is absent).
-  - Configure the path to each EXE via File > Configure Executable Paths in the
-    main window.
+
+  Configure the path to each EXE via  File > Configure Executable Paths...
+
+[ Specimen Presets ]
+
+  The "Specimen Preset" drop-down fills W, T, and ALP automatically for six
+  standard ASTM E647 specimen geometries:
+    M(T) 3" / 4" — middle-crack tension panels
+    C(T) 0.5T / 1T / 2T — compact tension specimens
+    ESE(T) — extended single-edge crack tension
+
+  Override individual fields after applying a preset if your specimen differs.
 
 [ Input Parameters ]
 
@@ -258,58 +429,67 @@ Open it from the main window via Tools > Material Data Generator (DkEff)...
   - 3: ESE(T)
 
   Test Type
-  - Constant R test: data was collected at a fixed stress ratio R. Supply R and Smax.
-  - Kmax test:       data was collected at a constant Kmax. Supply Kmax.
+  - Constant R test: data collected at fixed stress ratio R.  Supply R and Smax.
+  - Kmax test:       data collected at constant Kmax.  Supply Kmax.
 
   Analysis Mode (NSOP)
-  - Calculate c (NSOP=0): dkeff calculates crack length internally; only ΔK and
-    da/dN columns appear in the table.
-  - Input c (NSOP=1):     you supply the measured crack length c alongside ΔK and
-    da/dN. Most common mode.
-  - Input So/Smax (NSOP=2): you supply the crack-opening-stress ratio So/Smax
-    instead of c. Used for advanced closure analysis.
+  - NSOP=0: dkeff calculates crack length internally from ΔK and da/dN only.
+    Use this for database-sourced data where measured crack length is not available.
+  - NSOP=1: you supply measured crack length c alongside ΔK and da/dN.
+    Most common mode for raw ASTM E647 test records.
+  - NSOP=2: you supply the crack-opening-stress ratio So/Smax instead of c.
+    Used for advanced closure analysis.
 
   Specimen Dimensions
-  - W: Width (half-width for M(T)).
-  - T: Thickness.
-  - ALP: Constraint factor (1.0 = plane stress, 3.0 = plane strain).
+  - W:   Width (half-width for M(T)).
+  - T:   Thickness.
+  - ALP: Constraint factor (1.0=plane stress, 3.0=plane strain).
+
+  Material Properties
+  - SYIELD, SULT, E must be positive and in the same units as the test data.
+  - These are required before a dkeff run can proceed.
 
   Unit Conversion (LUNIT)
-  - Keep Same Units (0): no conversion applied.
-  - English → SI (1): ksi·√in → MPa·√m; multiplies stresses by 6.895.
-  - SI → English (2): MPa·√m → ksi·√in; divides stresses by 6.895.
+  - 0: Keep same units — no conversion applied.
+  - 1: English → SI  (ksi·√in → MPa·√m; multiplies stresses by 6.895).
+  - 2: SI → English  (MPa·√m → ksi·√in; divides stresses by 6.895).
 
 [ Lab Data Table ]
 
-  Each row represents one test data point. Columns:
-  - ΔK (stress-intensity-factor range)
-  - da/dN (crack-growth rate)
-  - c (crack length) or So/Smax — depending on NSOP
+  Each row represents one test data point.  Columns:
+    ΔK      — stress-intensity-factor range
+    da/dN   — crack-growth rate
+    c (or So/Smax) — depending on NSOP
 
   Data must be strictly ascending in both ΔK and da/dN.
-  Use the "Validate Data" button to check before running.
+  Use the "Validate Data" button to check for ordering errors before running.
 
 [ Workflow ]
 
-  1. Enter material properties (SYIELD, SULT, E) and analysis parameters.
-  2. Enter lab data in the table, or load an existing .dkin file via
+  ① Enter material properties (SYIELD, SULT, E) and analysis parameters.
+  ② Enter lab data in the table, or load an existing .dkin file via
      File > Load dkeff Input File.
-  3. Click "Validate Data" to check for ordering errors.
-  4. Click "Generate dKeff Data" to run the dkeff executable.
-  5. Review the raw output in the "dkeff Output" panel that appears below.
-  6. Click "Apply to Main Window" to copy the resulting ΔKeff table and
-     material properties back into the FASTRAN GUI.
+  ③ Click "Validate Data" to check for ordering errors.
+  ④ Click "② Generate dKeff Data" to run the dkeff executable.
+  ⑤ Review the raw output in the "dkeff Output" panel that appears below.
+  ⑥ Click "③ Apply to Main Window" to copy the resulting ΔKeff table and
+     material properties back into the FASTRAN GUI.  The crack-growth preview
+     plot on Tab 4 will update automatically.
 
-[ Batch .lkpx Conversion ]
+[ Importing .lkpx Files (LK Pro-X) ]
 
-  Use File > Batch Convert .lkpx File to convert a multi-R-ratio LK Pro-X
-  material file (.lkpx) into a single multi-dataset .dkin file.
+  File > Import .lkpx Direct to Main Window
+  - Parses a LK Pro-X material database file and lets you choose one R-ratio
+    dataset.  The selected ΔK / da/dN pairs are written directly into the
+    CGR_TABLE on Tab 4 — no dkeff run required.
 
+  File > Batch Convert .lkpx File
+  - Converts a multi-R-ratio .lkpx file into a single multi-dataset .dkin file
+    suitable for processing one dataset at a time through dkeff.
   1. Select the .lkpx file.
-  2. For each R-ratio found in the file, enter Smax, W, and T.
+  2. For each R-ratio found, enter Smax, W, and T.
   3. Choose an output .dkin filename.
-  4. Load the resulting file via File > Load dkeff Input File, then select a
-     dataset from the list to process it individually with dkeff.
+  4. Load the result via File > Load dkeff Input File, then select a dataset.
 """
 
 

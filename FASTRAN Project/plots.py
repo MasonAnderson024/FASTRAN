@@ -200,3 +200,41 @@ def plot_post_processing(ax: Axes, header, data, x_col, y_col, log_x=False, log_
     except Exception as e:
         print(f"Post-processing plot error: {e}")
         ax.clear()
+
+
+def plot_live_crack_growth(ax: Axes, cycles, crack_vals, ci=None, cf=None):
+    """
+    Redraws the real-time crack-size vs. cycles plot during a FASTRAN run.
+    Called once per queue-poll cycle, not per line, to avoid excessive redraws.
+    """
+    try:
+        ax.clear()
+        if not cycles:
+            ax.text(0.5, 0.5, "Waiting for data...",
+                    ha='center', va='center', transform=ax.transAxes,
+                    fontsize=10, color='gray')
+            ax.set_title("Live Crack Growth")
+            ax.set_xlabel("Cycles")
+            ax.set_ylabel("Crack Length")
+            return
+
+        ax.plot(cycles, crack_vals, '-', color='firebrick', linewidth=1.5,
+                marker='.', markersize=3)
+
+        if ci is not None:
+            ax.axhline(ci, color='steelblue', linewidth=1, linestyle='--',
+                       label=f'Ci = {ci:.4g}')
+        if cf is not None:
+            ax.axhline(cf, color='darkorange', linewidth=1, linestyle='--',
+                       label=f'Cf = {cf:.4g}')
+        if ci is not None or cf is not None:
+            ax.legend(loc='lower right', fontsize='small')
+
+        ax.set_xlabel("Cycles")
+        ax.set_ylabel("Crack Length")
+        ax.set_title(f"Live Crack Growth  ({len(cycles)} pts)")
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+    except Exception as e:
+        print(f"Live crack plot error: {e}")
+        ax.clear()

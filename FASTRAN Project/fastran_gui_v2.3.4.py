@@ -591,6 +591,13 @@ class FastranGui(tk.Tk):
         self.plot_canvas.get_tk_widget().pack(fill='both', expand=True)
 
         # Live run plot
+        live_btns = ttk.Frame(live_tab)
+        live_btns.pack(side='bottom', fill='x', pady=(4, 0))
+        ttk.Button(live_btns, text="Save Image...",
+                   command=self._save_live_plot).pack(side='left', padx=2)
+        ttk.Button(live_btns, text="Copy",
+                   command=self._copy_live_plot).pack(side='left', padx=2)
+
         self.live_fig = Figure(figsize=(4, 3), dpi=100)
         self.live_ax = self.live_fig.add_subplot(111)
         plots.plot_live_crack_growth(self.live_ax, [], [])
@@ -935,7 +942,8 @@ class FastranGui(tk.Tk):
         self._live_crack = []
         plots.plot_live_crack_growth(self.live_ax, [], [])
         self.live_canvas.draw()
-        self.crack_tab_nb.select(1)  # switch to Live Run tab
+        self._update_geo_canvas()     # reset schematic to user's CI before run starts
+        self.crack_tab_nb.select(1)   # switch to Live Run tab
 
         self.status_var.set("Running FASTRAN...")
         self.btn_run.config(state='disabled')
@@ -1073,10 +1081,74 @@ class FastranGui(tk.Tk):
                 self.geo_canvas.update_diagram(ntyp_id, dims=live_dims)
             except Exception:
                 pass
-        if run_done:
-            # Restore schematic to the user's original CI value
-            self._update_geo_canvas()
         self.after(200, self._monitor_execution_queue)
+
+    # ------------------------------------------------------------------
+    # LIVE PLOT EXPORT
+    # ------------------------------------------------------------------
+    def _save_live_plot(self):
+        path = filedialog.asksaveasfilename(
+            title="Save Crack Growth Plot",
+            defaultextension=".png",
+            initialfile="crack_growth.png",
+            filetypes=[("PNG Image", "*.png"),
+                       ("PDF Document", "*.pdf"),
+                       ("SVG Vector", "*.svg"),
+                       ("All Files", "*.*")])
+        if not path:
+            return
+        try:
+            self.live_fig.savefig(path, dpi=200, bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Could not save plot:\n{e}")
+
+    def _copy_live_plot(self):
+        if os.name != 'nt':
+            messagebox.showinfo(
+                "Copy Image",
+                "Image clipboard copy is currently Windows-only.\nUse Save Image... instead.")
+            return
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Copy Image",
+                "Pillow (PIL) is required for clipboard copy.\nUse Save Image... instead.")
+            return
+        from io import BytesIO
+        import ctypes
+        buf = BytesIO()
+        try:
+            self.live_fig.savefig(buf, format='png', dpi=200, bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not render image:\n{e}")
+            return
+        buf.seek(0)
+        image = Image.open(buf).convert('RGB')
+        bmp_buf = BytesIO()
+        image.save(bmp_buf, 'BMP')
+        dib = bmp_buf.getvalue()[14:]
+        CF_DIB = 8
+        GMEM_MOVEABLE = 0x0002
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        try:
+            if not user32.OpenClipboard(0):
+                raise OSError("Could not open clipboard")
+            try:
+                user32.EmptyClipboard()
+                h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(dib))
+                if not h_mem:
+                    raise OSError("GlobalAlloc failed")
+                p_mem = kernel32.GlobalLock(h_mem)
+                ctypes.memmove(p_mem, dib, len(dib))
+                kernel32.GlobalUnlock(h_mem)
+                if not user32.SetClipboardData(CF_DIB, h_mem):
+                    raise OSError("SetClipboardData failed")
+            finally:
+                user32.CloseClipboard()
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not copy to clipboard:\n{e}")
 
     # ------------------------------------------------------------------
     # DIALOGS & HANDLERS

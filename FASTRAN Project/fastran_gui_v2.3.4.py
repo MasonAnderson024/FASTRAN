@@ -53,6 +53,8 @@ class FastranGui(tk.Tk):
         self.dkeff21_exe_path = None
         self.help_window = None
         self.run_progress = None
+        self._live_cycles = []
+        self._live_crack = []
         
         # --- Configuration ---
         self._load_external_config()
@@ -546,9 +548,16 @@ class FastranGui(tk.Tk):
         paned.pack(fill='both', expand=True, padx=10, pady=6)
 
         left = ttk.Frame(paned, padding=10)
-        right = ttk.LabelFrame(paned, text="Crack Growth Rate Preview", padding=10)
+        right = ttk.Frame(paned)
         paned.add(left, weight=3) # 60%
         paned.add(right, weight=2) # 40%
+
+        self.crack_tab_nb = ttk.Notebook(right)
+        self.crack_tab_nb.pack(fill='both', expand=True)
+        paris_tab = ttk.LabelFrame(self.crack_tab_nb, text="Paris Law Preview", padding=10)
+        live_tab = ttk.Frame(self.crack_tab_nb, padding=5)
+        self.crack_tab_nb.add(paris_tab, text="Paris Law")
+        self.crack_tab_nb.add(live_tab, text="Live Run")
         
         # Options
         opt_f = ttk.Frame(left); opt_f.pack(fill='x')
@@ -572,14 +581,28 @@ class FastranGui(tk.Tk):
         self.constants_frame.pack(fill='both', expand=True, pady=10)
         self._build_constants_panel()
 
-        # Plot
+        # Paris Law preview plot
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
         self.plot_fig = Figure(figsize=(4, 3), dpi=100)
         self.plot_ax = self.plot_fig.add_subplot(111)
         plots.setup_growth_plot(self.plot_ax)
-        self.plot_canvas = FigureCanvasTkAgg(self.plot_fig, master=right)
+        self.plot_canvas = FigureCanvasTkAgg(self.plot_fig, master=paris_tab)
         self.plot_canvas.get_tk_widget().pack(fill='both', expand=True)
+
+        # Live run plot
+        live_btns = ttk.Frame(live_tab)
+        live_btns.pack(side='bottom', fill='x', pady=(4, 0))
+        ttk.Button(live_btns, text="Save Image...",
+                   command=self._save_live_plot).pack(side='left', padx=2)
+        ttk.Button(live_btns, text="Copy",
+                   command=self._copy_live_plot).pack(side='left', padx=2)
+
+        self.live_fig = Figure(figsize=(4, 3), dpi=100)
+        self.live_ax = self.live_fig.add_subplot(111)
+        plots.plot_live_crack_growth(self.live_ax, [], [])
+        self.live_canvas = FigureCanvasTkAgg(self.live_fig, master=live_tab)
+        self.live_canvas.get_tk_widget().pack(fill='both', expand=True)
 
     def _render_growth_inputs_for_eq(self, parent, eq_idx):
         """Render Section 6/7a inputs for a single equation (1-indexed)."""
@@ -915,6 +938,13 @@ class FastranGui(tk.Tk):
             return
 
         # 4. Run (Secure)
+        self._live_cycles = []
+        self._live_crack = []
+        plots.plot_live_crack_growth(self.live_ax, [], [])
+        self.live_canvas.draw()
+        self._update_geo_canvas()     # reset schematic to user's CI before run starts
+        self.crack_tab_nb.select(1)   # switch to Live Run tab
+
         self.status_var.set("Running FASTRAN...")
         self.btn_run.config(state='disabled')
         runners.run_fastran(
@@ -988,7 +1018,30 @@ class FastranGui(tk.Tk):
         self.batch_ax.grid(True)
         self.batch_canvas.draw()
 
+    def _parse_live_crack_line(self, line):
+        """Parse one FASTRAN stdout line for crack data. Returns True if a point was found."""
+        try:
+            c_val = None
+            cycles = None
+            if "C*- RAD =" in line and "CYCLES =" in line:
+                parts = line.split()
+                c_val = float(parts[parts.index("C*-") + 3])
+                cycles = float(parts[parts.index("CYCLES") + 2])
+            elif "C_crack" in line and "CYCLES" in line and "BLOCK" not in line:
+                parts = line.split()
+                c_val = float(parts[parts.index("C_crack") + 1])
+                cycles = float(parts[parts.index("CYCLES") + 1])
+            if c_val is not None and cycles is not None:
+                self._live_cycles.append(cycles)
+                self._live_crack.append(c_val)
+                return True
+        except (ValueError, IndexError):
+            pass
+        return False
+
     def _monitor_execution_queue(self):
+        plot_updated = False
+        run_done = False
         try:
             while True:
                 msg = self.log_queue.get_nowait()
@@ -997,14 +1050,105 @@ class FastranGui(tk.Tk):
                     self.status_var.set("Run Complete.")
                     self.btn_run.config(state='normal')
                     self.results_menu.entryconfig("Export to CSV...", state="normal")
+                    run_done = True
                     messagebox.showinfo("Success", "Analysis Complete.")
                 elif "ERROR" in msg or "SECURITY BLOCK" in msg:
                     self._close_run_progress()
                     self.status_var.set("Run Failed.")
                     self.btn_run.config(state='normal')
+                    run_done = True
                     messagebox.showerror("Error", msg)
-        except queue.Empty: pass
-        finally: self.after(200, self._monitor_execution_queue)
+                elif self._parse_live_crack_line(msg):
+                    plot_updated = True
+        except queue.Empty:
+            pass
+        if plot_updated:
+            try:
+                ci_str = self.vars['CI'].get()
+                cf_str = self.vars['CF'].get()
+                ci = float(ci_str) if ci_str else None
+                cf = float(cf_str) if cf_str else None
+                plots.plot_live_crack_growth(self.live_ax, self._live_cycles,
+                                             self._live_crack, ci, cf)
+                self.live_canvas.draw()
+            except Exception:
+                pass
+            # Animate the geometry schematic with the current crack size
+            try:
+                ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
+                live_dims = self._collect_dims()
+                live_dims['CI'] = self._live_crack[-1]
+                self.geo_canvas.update_diagram(ntyp_id, dims=live_dims)
+            except Exception:
+                pass
+        self.after(200, self._monitor_execution_queue)
+
+    # ------------------------------------------------------------------
+    # LIVE PLOT EXPORT
+    # ------------------------------------------------------------------
+    def _save_live_plot(self):
+        path = filedialog.asksaveasfilename(
+            title="Save Crack Growth Plot",
+            defaultextension=".png",
+            initialfile="crack_growth.png",
+            filetypes=[("PNG Image", "*.png"),
+                       ("PDF Document", "*.pdf"),
+                       ("SVG Vector", "*.svg"),
+                       ("All Files", "*.*")])
+        if not path:
+            return
+        try:
+            self.live_fig.savefig(path, dpi=200, bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Could not save plot:\n{e}")
+
+    def _copy_live_plot(self):
+        if os.name != 'nt':
+            messagebox.showinfo(
+                "Copy Image",
+                "Image clipboard copy is currently Windows-only.\nUse Save Image... instead.")
+            return
+        try:
+            from PIL import Image
+        except ImportError:
+            messagebox.showerror(
+                "Copy Image",
+                "Pillow (PIL) is required for clipboard copy.\nUse Save Image... instead.")
+            return
+        from io import BytesIO
+        import ctypes
+        buf = BytesIO()
+        try:
+            self.live_fig.savefig(buf, format='png', dpi=200, bbox_inches='tight')
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not render image:\n{e}")
+            return
+        buf.seek(0)
+        image = Image.open(buf).convert('RGB')
+        bmp_buf = BytesIO()
+        image.save(bmp_buf, 'BMP')
+        dib = bmp_buf.getvalue()[14:]
+        CF_DIB = 8
+        GMEM_MOVEABLE = 0x0002
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        try:
+            if not user32.OpenClipboard(0):
+                raise OSError("Could not open clipboard")
+            try:
+                user32.EmptyClipboard()
+                h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(dib))
+                if not h_mem:
+                    raise OSError("GlobalAlloc failed")
+                p_mem = kernel32.GlobalLock(h_mem)
+                ctypes.memmove(p_mem, dib, len(dib))
+                kernel32.GlobalUnlock(h_mem)
+                if not user32.SetClipboardData(CF_DIB, h_mem):
+                    raise OSError("SetClipboardData failed")
+            finally:
+                user32.CloseClipboard()
+        except Exception as e:
+            messagebox.showerror("Copy Error", f"Could not copy to clipboard:\n{e}")
 
     # ------------------------------------------------------------------
     # DIALOGS & HANDLERS

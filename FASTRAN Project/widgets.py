@@ -111,7 +111,7 @@ class GeometryCanvas(tk.Frame):
         self.current_ntyp = ntyp
 
         self.ax.set_title("Plan View", fontsize=8, pad=2)
-        self.ax_cs.set_title("Section A–A", fontsize=8, pad=2)
+        self.ax_cs.set_title("Section A-A", fontsize=8, pad=2)
 
         # --- DRAWING LOGIC ---
 
@@ -355,7 +355,14 @@ class GeometryCanvas(tk.Frame):
         else:
             self.ax.text(50, 50, f"Schematic N/A\n(Type {ntyp})", ha='center', fontsize=10)
 
-        self._draw_cross_section(ntyp)
+        try:
+            self._draw_cross_section(ntyp)
+        except Exception as e:
+            print(f"Cross-section draw error (NTYP={ntyp}): {e}")
+            self.ax_cs.text(50, 50, f"Section N/A\n({type(e).__name__})",
+                            ha='center', va='center', fontsize=8, color='gray')
+
+        self._update_view_layout()  # re-apply stacked positions after axes.clear()
         self.canvas.draw()
 
     # --- DRAWING HELPERS ---

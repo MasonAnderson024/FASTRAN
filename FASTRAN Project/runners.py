@@ -20,7 +20,24 @@ import time
 import security
 
 
-def _execute_process(exe_path, input_str, working_dir, output_queue):
+class RunHandle:
+    """
+    Holds a reference to the running FASTRAN subprocess so the GUI can cancel it.
+    Created by run_fastran() and stored on the GUI instance.
+    """
+    def __init__(self):
+        self._process = None
+
+    def cancel(self):
+        """Terminate the subprocess if it is still running."""
+        if self._process and self._process.poll() is None:
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
+
+
+def _execute_process(exe_path, input_str, working_dir, output_queue, handle=None):
     """
     Generic worker: runs a CLI executable, pipes input_str to stdin,
     and streams stdout/stderr to output_queue.
@@ -43,6 +60,8 @@ def _execute_process(exe_path, input_str, working_dir, output_queue):
             bufsize=1,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
+        if handle is not None:
+            handle._process = process
 
         if input_str:
             try:
@@ -75,6 +94,8 @@ def run_fastran(exe_path, input_file_abs, output_dir_abs, output_queue, project_
     """
     Runs the FASTRAN solver in a daemon thread.
 
+    Returns a RunHandle whose .cancel() method terminates the subprocess.
+
     Args:
         exe_path:        Path to fastran.exe
         input_file_abs:  Absolute path to the .txt input file
@@ -82,11 +103,13 @@ def run_fastran(exe_path, input_file_abs, output_dir_abs, output_queue, project_
         output_queue:    Queue for GUI log messages
         project_root:    Project root used as the subprocess working directory
     """
+    handle = RunHandle()
+
     try:
         security.IntegrityChecker.verify_tool("fastran", exe_path)
     except security.SecurityError as e:
         output_queue.put(f"SECURITY BLOCK: {str(e)}")
-        return
+        return handle
 
     logger = None
     try:
@@ -107,7 +130,7 @@ def run_fastran(exe_path, input_file_abs, output_dir_abs, output_queue, project_
     def _threaded_wrapper():
         start = time.time()
         try:
-            _execute_process(exe_path, input_str, project_root, output_queue)
+            _execute_process(exe_path, input_str, project_root, output_queue, handle)
             if logger:
                 logger.log_event("ANALYSIS_COMPLETE",
                                  f"Duration: {time.time()-start:.2f}s", status="SUCCESS")
@@ -117,6 +140,7 @@ def run_fastran(exe_path, input_file_abs, output_dir_abs, output_queue, project_
             output_queue.put(f"Run Error: {e}")
 
     threading.Thread(target=_threaded_wrapper, daemon=True).start()
+    return handle
 
 
 # ------------------------------------------------------------------

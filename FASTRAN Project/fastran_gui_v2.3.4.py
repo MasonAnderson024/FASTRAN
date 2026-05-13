@@ -55,7 +55,9 @@ class FastranGui(tk.Tk):
         self.run_progress = None
         self._live_cycles = []
         self._live_crack = []
-        
+        self._run_handle = None
+        self._run_cancelled = False
+
         # --- Configuration ---
         self._load_external_config()
         self._init_vars()
@@ -274,6 +276,11 @@ class FastranGui(tk.Tk):
         widgets.ToolTip(self.btn_run,
                         "Create or open a project first (File → New Project),\n"
                         "then fill all five tabs and click here to run FASTRAN.")
+
+        self.btn_cancel = ttk.Button(bot_frame, text="Cancel Run",
+                                     command=self._cancel_analysis, width=12)
+        # Hidden until a run starts; placed left of the Run button
+        self.btn_cancel.pack_forget()
 
         self.status_var = tk.StringVar(value="Welcome — create or open a project to begin.")
         ttk.Label(bot_frame, textvariable=self.status_var,
@@ -863,6 +870,16 @@ class FastranGui(tk.Tk):
             except (ValueError, TypeError, KeyError):
                 return None
 
+        # Executable availability
+        if not self.fastran_exe_path:
+            errors.append(
+                "FASTRAN executable not configured. "
+                "Use File → Configure Executable Paths… to set it.")
+        elif not os.path.isfile(self.fastran_exe_path):
+            errors.append(
+                f"FASTRAN executable not found: {self.fastran_exe_path}\n"
+                "Use File → Configure Executable Paths… to update the path.")
+
         # Crack-size ordering
         ci, cf, cn = num('CI'), num('CF'), num('CN')
         if ci is None or cf is None:
@@ -943,6 +960,7 @@ class FastranGui(tk.Tk):
         # 4. Run (Secure)
         self._live_cycles = []
         self._live_crack = []
+        self._run_cancelled = False
         plots.plot_live_crack_growth(self.live_ax, [], [])
         self.live_canvas.draw()
         self._update_geo_canvas()       # reset schematic to user's CI before run starts
@@ -951,13 +969,24 @@ class FastranGui(tk.Tk):
 
         self.status_var.set("Running FASTRAN...")
         self.btn_run.config(state='disabled')
-        runners.run_fastran(
+        self.btn_cancel.pack(side='right', padx=(0, 4))
+        self._run_handle = runners.run_fastran(
             self.fastran_exe_path, inp_path, self.project.get_path('output'),
             self.log_queue, self.project.project_path
         )
 
     def _close_run_progress(self):
         pass  # ProgressWindow removed; live crack plot is now the progress indicator
+
+    def _cancel_analysis(self):
+        """Terminate the running FASTRAN subprocess and reset UI state."""
+        self._run_cancelled = True
+        if self._run_handle:
+            self._run_handle.cancel()
+        self.btn_cancel.pack_forget()
+        self.btn_run.config(state='normal')
+        self.status_var.set("Run cancelled.")
+        self._run_handle = None
 
     def _run_batch_analysis(self):
         if not self.project.project_path: return
@@ -1042,13 +1071,27 @@ class FastranGui(tk.Tk):
                 msg = self.log_queue.get_nowait()
                 if "PROCESS FINISHED" in msg:
                     self._close_run_progress()
+                    self.btn_cancel.pack_forget()
+                    self._run_handle = None
                     self.status_var.set("Run Complete.")
                     self.btn_run.config(state='normal')
                     self.results_menu.entryconfig("Export to CSV...", state="normal")
                     run_done = True
                     messagebox.showinfo("Success", "Analysis Complete.")
+                elif "PROCESS FAILED" in msg:
+                    self._close_run_progress()
+                    self.btn_cancel.pack_forget()
+                    self._run_handle = None
+                    self.status_var.set("Run cancelled." if self._run_cancelled else "Run Failed.")
+                    self.btn_run.config(state='normal')
+                    run_done = True
+                    if not self._run_cancelled:
+                        messagebox.showerror("Run Failed", msg)
+                    self._run_cancelled = False
                 elif "ERROR" in msg or "SECURITY BLOCK" in msg:
                     self._close_run_progress()
+                    self.btn_cancel.pack_forget()
+                    self._run_handle = None
                     self.status_var.set("Run Failed.")
                     self.btn_run.config(state='normal')
                     run_done = True

@@ -945,8 +945,9 @@ class FastranGui(tk.Tk):
         self._live_crack = []
         plots.plot_live_crack_growth(self.live_ax, [], [])
         self.live_canvas.draw()
-        self._update_geo_canvas()     # reset schematic to user's CI before run starts
-        self.crack_tab_nb.select(1)   # switch to Live Run tab
+        self._update_geo_canvas()       # reset schematic to user's CI before run starts
+        self.notebook.select(3)         # switch to Crack Growth tab
+        self.crack_tab_nb.select(1)     # switch to Live Run sub-tab
 
         self.status_var.set("Running FASTRAN...")
         self.btn_run.config(state='disabled')
@@ -954,18 +955,9 @@ class FastranGui(tk.Tk):
             self.fastran_exe_path, inp_path, self.project.get_path('output'),
             self.log_queue, self.project.project_path
         )
-        self.run_progress = dialogs.ProgressWindow(
-            self, title="Running FASTRAN", message="Analysis in progress..."
-        )
-        self.run_progress.start()
 
     def _close_run_progress(self):
-        if self.run_progress is not None:
-            try:
-                self.run_progress.stop()
-            except tk.TclError:
-                pass
-            self.run_progress = None
+        pass  # ProgressWindow removed; live crack plot is now the progress indicator
 
     def _run_batch_analysis(self):
         if not self.project.project_path: return

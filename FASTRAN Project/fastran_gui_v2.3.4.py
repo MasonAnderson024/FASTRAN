@@ -341,6 +341,9 @@ class FastranGui(tk.Tk):
         self.geo_canvas = widgets.GeometryCanvas(right)
         self.geo_canvas.pack(fill='both', expand=True)
 
+        # Draw the initial schematic once the event loop is running
+        self.after(0, self._on_ntyp_change)
+
     def _update_dim_readout(self, *_):
         parts = []
         for key, label in (('W', 'W'), ('B', 'T'), ('CI', 'Ci'),

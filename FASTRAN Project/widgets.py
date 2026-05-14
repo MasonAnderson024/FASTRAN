@@ -355,6 +355,27 @@ class GeometryCanvas(tk.Frame):
         else:
             self.ax.text(50, 50, f"Schematic N/A\n(Type {ntyp})", ha='center', fontsize=10)
 
+        # Dimension ratio annotation — always shows actual proportions regardless
+        # of how the drawing is clamped, so the schematic is never misleading.
+        w = self._dim('W'); ci = self._dim('CI'); cf = self._dim('CF')
+        if w > 0 and (ci > 0 or cf > 0):
+            ratio_parts = []
+            if ci > 0:
+                raw = ci / w * 40
+                clamped = max(3, min(38, raw))
+                tag = " *" if abs(raw - clamped) > 0.5 else ""
+                ratio_parts.append(f"CI/W={ci/w:.3f}{tag}")
+            if cf > 0:
+                raw = cf / w * 40
+                clamped = max(3, min(38, raw))
+                tag = " *" if abs(raw - clamped) > 0.5 else ""
+                ratio_parts.append(f"CF/W={cf/w:.3f}{tag}")
+            label = "  ".join(ratio_parts)
+            if "*" in label:
+                label += "  (* not to scale)"
+            self.ax.text(50, 2, label, ha='center', va='bottom', fontsize=5.5,
+                         color='dimgray', fontstyle='italic')
+
         try:
             self._draw_cross_section(ntyp)
         except Exception as e:
@@ -895,9 +916,14 @@ class ToolTip:
             self.id = None
 
     def showtip(self):
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 20
+        # bbox("insert") only works on Text widgets; use widget geometry for everything else
+        try:
+            bx, by, _, _ = self.widget.bbox("insert")
+            x = self.widget.winfo_rootx() + bx + 25
+            y = self.widget.winfo_rooty() + by + 20
+        except (TypeError, tk.TclError):
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
         
         self.tooltip_window = tk.Toplevel(self.widget)
         self.tooltip_window.wm_overrideredirect(True) # Remove window borders

@@ -1078,6 +1078,7 @@ class FastranGui(tk.Tk):
                     self.results_menu.entryconfig("Export to CSV...", state="normal")
                     run_done = True
                     messagebox.showinfo("Success", "Analysis Complete.")
+                    break
                 elif "PROCESS FAILED" in msg:
                     self._close_run_progress()
                     self.btn_cancel.pack_forget()
@@ -1088,6 +1089,7 @@ class FastranGui(tk.Tk):
                     if not self._run_cancelled:
                         messagebox.showerror("Run Failed", msg)
                     self._run_cancelled = False
+                    break
                 elif "ERROR" in msg or "SECURITY BLOCK" in msg:
                     self._close_run_progress()
                     self.btn_cancel.pack_forget()
@@ -1096,6 +1098,7 @@ class FastranGui(tk.Tk):
                     self.btn_run.config(state='normal')
                     run_done = True
                     messagebox.showerror("Error", msg)
+                    break
                 elif self._parse_live_crack_line(msg):
                     plot_updated = True
         except queue.Empty:

@@ -236,7 +236,7 @@ def _write_loading_section(lines, nfopt, get_val, smax, smin):
         # Lines 3+: block definitions
         # For NFOPT=1, full block data comes from BlockEditorWindow (not wired yet).
         # For NFOPT=0, generate a single block with one constant-amplitude level.
-        block_data = get_val('BLOCK_DATA') if 'BLOCK_DATA' in {} else None
+        block_data = get_val('BLOCK_DATA') if 'BLOCK_DATA' in vars_dict else None
         if block_data is None:
             # Default: one block, one stress level
             lines.append(row(1, 1, 1))              # NBLK=1  NSL=1  NSQ=1

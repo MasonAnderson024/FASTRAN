@@ -895,9 +895,14 @@ class ToolTip:
             self.id = None
 
     def showtip(self):
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 20
+        # bbox("insert") only works on Text widgets; use widget geometry for everything else
+        try:
+            bx, by, _, _ = self.widget.bbox("insert")
+            x = self.widget.winfo_rootx() + bx + 25
+            y = self.widget.winfo_rooty() + by + 20
+        except (TypeError, tk.TclError):
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
         
         self.tooltip_window = tk.Toplevel(self.widget)
         self.tooltip_window.wm_overrideredirect(True) # Remove window borders

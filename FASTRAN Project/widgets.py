@@ -11,6 +11,7 @@ Responsibilities:
 """
 
 import os
+import math
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from contextlib import contextmanager
@@ -156,7 +157,7 @@ class GeometryCanvas(tk.Frame):
             self.ax.add_patch(patches.Rectangle((10, 30), 80, 40,
                                                 fill=False, edgecolor='black', linewidth=2))
             a_px = self._crack_full_px(lo=4, hi=36, default=20)
-            self.ax.add_patch(patches.Rectangle((48, 30), 4, a_px, color='red'))
+            self.ax.plot([50, 50], [30, 30 + a_px], 'r-', lw=2)
             self.ax.add_patch(patches.Circle((20, 25), 3, color='blue'))
             self.ax.add_patch(patches.Circle((80, 25), 3, color='blue'))
             self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
@@ -167,24 +168,30 @@ class GeometryCanvas(tk.Frame):
             # Draw Cylinder Cross section
             self.ax.add_patch(patches.Circle((50, 50), 40, fill=False, edgecolor='black', linewidth=2))
             self.ax.add_patch(patches.Circle((50, 50), 35, fill=False, edgecolor='black', linestyle='--'))
-            # Crack on outer wall
-            self.ax.add_patch(patches.Rectangle((85, 48), 10, 4, color='red'))
-            self._add_label(50, 50, "Radius")
-            self._add_label(90, 55, "a")
+            # Radial crack from outer wall
+            self.ax.plot([90, 97], [50, 50], 'r-', lw=2)
+            self._add_label(50, 50, "R", color='#333')
+            self._add_label(97, 55, "a")
 
         elif ntyp == 6:  # Corner Crack a=c in Square-Bar (AGARD)
             self.ax.add_patch(patches.Rectangle((20, 20), 60, 60, fill=False,
                                                 edgecolor='black', linewidth=2))
-            # Quarter-ellipse at top-right corner
-            self.ax.add_patch(patches.Wedge((80, 80), 14, 180, 270, color='red'))
-            self._add_label(75, 70, "a=c")
+            # Quarter-arc corner crack at top-right
+            self.ax.add_patch(patches.Arc((80, 80), 28, 28, theta1=180, theta2=270,
+                                          color='red', lw=2))
+            self.ax.plot([66, 80], [80, 80], 'r-', lw=1.5)
+            self.ax.plot([80, 80], [66, 80], 'r-', lw=1.5)
+            self._add_label(68, 71, "a=c")
             self._add_label(50, 13, "Square Bar")
 
         elif ntyp == 7:  # Corner Crack in Plate (Tension/Bending)
             self._draw_plate()
-            self.ax.add_patch(patches.Wedge((90, 90), 14, 180, 270, color='red'))
+            self.ax.add_patch(patches.Arc((90, 90), 28, 28, theta1=180, theta2=270,
+                                          color='red', lw=2))
+            self.ax.plot([76, 90], [90, 90], 'r-', lw=1.5)
+            self.ax.plot([90, 90], [76, 90], 'r-', lw=1.5)
             self._draw_tension_arrows()
-            self._add_label(80, 80, "a, c")
+            self._add_label(78, 78, "a, c")
 
         elif ntyp == 8:  # Double-Edge Crack Tension D(T)
             self._draw_plate()
@@ -208,8 +215,10 @@ class GeometryCanvas(tk.Frame):
             a_px = self._crack_full_px(lo=3, hi=25, default=8)
             self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
             cx = 50 + r_px
-            self.ax.add_patch(patches.Polygon(
-                [[cx, 50], [cx + a_px, 50], [cx, 50 + a_px]], color='red'))
+            self.ax.add_patch(patches.Arc((cx, 50), 2 * a_px, 2 * a_px,
+                                          theta1=0, theta2=90, color='red', lw=2))
+            self.ax.plot([cx, cx + a_px], [50, 50], 'r-', lw=1.5)
+            self.ax.plot([cx, cx], [50, 50 + a_px], 'r-', lw=1.5)
             self._add_label(cx + a_px + 4, 53, f"c={self._dim('CI', '?'):.4g}" if self._dim('CI') else "c")
             self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
@@ -219,9 +228,15 @@ class GeometryCanvas(tk.Frame):
             a_px = self._crack_full_px(lo=3, hi=20, default=8)
             self.ax.add_patch(patches.Circle((50, 50), r_px, fill=False, edgecolor='black'))
             cx = 50 + r_px
-            self.ax.add_patch(patches.Polygon([[cx, 50], [cx + a_px, 50], [cx, 50 + a_px]], color='red'))
+            self.ax.add_patch(patches.Arc((cx, 50), 2 * a_px, 2 * a_px,
+                                          theta1=0, theta2=90, color='red', lw=2))
+            self.ax.plot([cx, cx + a_px], [50, 50], 'r-', lw=1.5)
+            self.ax.plot([cx, cx], [50, 50 + a_px], 'r-', lw=1.5)
             cx2 = 50 - r_px
-            self.ax.add_patch(patches.Polygon([[cx2, 50], [cx2 - a_px, 50], [cx2, 50 + a_px]], color='red'))
+            self.ax.add_patch(patches.Arc((cx2, 50), 2 * a_px, 2 * a_px,
+                                          theta1=90, theta2=180, color='red', lw=2))
+            self.ax.plot([cx2 - a_px, cx2], [50, 50], 'r-', lw=1.5)
+            self.ax.plot([cx2, cx2], [50, 50 + a_px], 'r-', lw=1.5)
             self._add_label(50, 50 - r_px - 6, f"R={self._dim('RAD', '?'):.4g}" if self._dim('RAD') else "Dia")
 
         elif ntyp == -3:  # One Through Crack at Hole
@@ -274,7 +289,10 @@ class GeometryCanvas(tk.Frame):
         elif ntyp == -9:  # Corner Crack at Semi-Circular Edge Notch
             self._draw_plate()
             self._draw_edge_notch(side='left', y=50, radius=8)
-            self.ax.add_patch(patches.Wedge((18, 50), 8, 270, 360, color='red'))
+            self.ax.add_patch(patches.Arc((18, 50), 16, 16, theta1=270, theta2=360,
+                                          color='red', lw=2))
+            self.ax.plot([18, 26], [50, 50], 'r-', lw=1.5)
+            self.ax.plot([18, 18], [42, 50], 'r-', lw=1.5)
             self._add_label(30, 50, "c")
             self._add_label(15, 70, "Notch")
 
@@ -312,8 +330,11 @@ class GeometryCanvas(tk.Frame):
                                                 edgecolor='blue', linestyle='--', linewidth=1.5))
             self.ax.add_patch(patches.Circle((50, 45), 4, color='black'))
             self._add_label(50, 60, "Rivet")
-            # Corner crack (quarter ellipse)
-            self.ax.add_patch(patches.Wedge((54, 45), 6, 0, 90, color='red'))
+            # Corner crack (quarter-arc outline)
+            self.ax.add_patch(patches.Arc((54, 45), 12, 12, theta1=0, theta2=90,
+                                          color='red', lw=2))
+            self.ax.plot([54, 60], [45, 45], 'r-', lw=1.5)
+            self.ax.plot([54, 54], [45, 51], 'r-', lw=1.5)
 
         elif ntyp == -14:  # Surface Crack at Edge Notch Bend
             # Bend specimen plate
@@ -509,9 +530,10 @@ class GeometryCanvas(tk.Frame):
 
         elif ntyp == 4:  # Single Edge Bend – through crack from bottom
             self._cs_rect(ax)
-            ax.add_patch(patches.Rectangle((46, 10), 8, 40, color='red'))
+            a_d = self._depth_px(lo=8, hi=72, default=30)
+            ax.plot([50, 50], [10, 10 + a_d], 'r-', lw=2)
             self._cs_ann_B(ax)
-            self._cs_label(ax, 60, 30, "a", color='red')
+            self._cs_label(ax, 62, 10 + a_d / 2, "a", color='red')
 
         elif ntyp == 5:  # Pressurized Cylinder – radial crack on outer wall
             # Show longitudinal cross-section: hollow cylinder wall with radial crack
@@ -520,10 +542,10 @@ class GeometryCanvas(tk.Frame):
             ax.add_patch(patches.Rectangle((30, 20), 40, 60, fc='#e8e8e8', ec='none'))
             ax.add_patch(patches.Rectangle((30, 20), 40, 60, fill=False,
                                            edgecolor='black', linewidth=1, linestyle='--'))
-            # Radial crack from outer surface
-            ax.add_patch(patches.Rectangle((78, 46), 12, 8, color='red'))
+            # Radial crack from outer wall (thin line penetrating wall)
+            ax.plot([72, 80], [50, 50], 'r-', lw=2)
             self._cs_label(ax, 50, 50, "bore", color='#555', fontsize=8)
-            self._cs_label(ax, 93, 50, "a", color='red')
+            self._cs_label(ax, 68, 45, "a", color='red')
             self._cs_label(ax, 15, 50, "t", color='#333')
 
         elif ntyp in (6, 7):  # Corner Crack – quarter ellipse at top-right corner
@@ -638,8 +660,8 @@ class GeometryCanvas(tk.Frame):
             ax.add_patch(patches.Rectangle((10, 20), 80, 25, fill=False,
                                            edgecolor='blue', lw=1.5, linestyle='--'))
             # Through crack in top sheet from rivet hole
-            ax.add_patch(patches.Rectangle((58, 55), 4, 25, color='red'))
-            self._cs_label(ax, 68, 67, "c", color='red')
+            ax.plot([60, 60], [55, 80], 'r-', lw=2)
+            self._cs_label(ax, 67, 67, "c", color='red')
             ax.annotate("", xy=(8, 55), xytext=(8, 80),
                         arrowprops=dict(arrowstyle='<->', color='#333', lw=1))
             self._cs_label(ax, 3, 67, "t", color='#333', fontsize=8)
@@ -649,8 +671,11 @@ class GeometryCanvas(tk.Frame):
                                            edgecolor='black', lw=2))
             ax.add_patch(patches.Rectangle((10, 20), 80, 25, fill=False,
                                            edgecolor='blue', lw=1.5, linestyle='--'))
-            ax.add_patch(patches.Wedge((85, 80), 14, 180, 270, color='red', alpha=0.8))
-            self._cs_label(ax, 72, 68, "a,c", color='red', fontsize=7)
+            ax.add_patch(patches.Arc((85, 80), 28, 28, theta1=180, theta2=270,
+                                      color='red', lw=2))
+            ax.plot([71, 85], [80, 80], 'r-', lw=1.5)
+            ax.plot([85, 85], [66, 80], 'r-', lw=1.5)
+            self._cs_label(ax, 72, 69, "a,c", color='red', fontsize=7)
 
         elif ntyp == -14:  # Surface Crack at Edge Notch Bend
             self._cs_rect(ax)
@@ -699,7 +724,7 @@ class GeometryCanvas(tk.Frame):
 
     def _cs_through_crack(self, ax, cx=50, w=4):
         """Draw a through-thickness crack (full-height slit)."""
-        ax.add_patch(patches.Rectangle((cx - w / 2, 10), w, 80, color='red'))
+        ax.plot([cx, cx], [10, 90], color='red', lw=2.0)
 
     def _cs_surface_crack(self, ax, cx=50, face='top', crack_w=28, crack_h=24):
         """Draw a semi-elliptical surface crack (depth ~30 % into thickness)."""
@@ -717,17 +742,22 @@ class GeometryCanvas(tk.Frame):
                        "a", color='red')
 
     def _cs_corner_crack(self, ax, corner='tr', r=20):
-        """Draw a quarter-ellipse corner crack."""
+        """Draw a quarter-arc corner crack: arc = crack front into specimen, lines = crack faces."""
+        # Angles point INTO the specimen from each corner
         cfg = {
-            'tl': (15, 90, 0,   90),
-            'tr': (85, 90, 90,  180),
-            'bl': (15, 10, 270, 360),
-            'br': (85, 10, 180, 270),
+            'tl': (15, 90, 270, 360),
+            'tr': (85, 90, 180, 270),
+            'bl': (15, 10,   0,  90),
+            'br': (85, 10,  90, 180),
         }
         cx, cy, t1, t2 = cfg[corner]
-        ax.add_patch(patches.Wedge((cx, cy), r, t1, t2, color='red', alpha=0.75))
-        off_x = 10 if 'l' in corner else -10
-        off_y = -12 if 't' in corner else 12
+        ax.add_patch(patches.Arc((cx, cy), 2 * r, 2 * r, theta1=t1, theta2=t2,
+                                  color='red', lw=2))
+        t1r, t2r = math.radians(t1), math.radians(t2)
+        ax.plot([cx, cx + r * math.cos(t1r)], [cy, cy + r * math.sin(t1r)], 'r-', lw=1.5)
+        ax.plot([cx, cx + r * math.cos(t2r)], [cy, cy + r * math.sin(t2r)], 'r-', lw=1.5)
+        off_x = 12 if 'l' in corner else -12
+        off_y = -14 if 't' in corner else 14
         self._cs_label(ax, cx + off_x, cy + off_y, "a,c", color='#cc0000', fontsize=7)
 
     # --- VIEW LAYOUT ---

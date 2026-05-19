@@ -365,13 +365,30 @@ class GeometryCanvas(tk.Frame):
             self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
             self._add_label(56, 48, "c")
 
-        elif ntyp == -99:  # User-Defined Crack at Hole/Notch
-            self.ax.add_patch(patches.Rectangle((20, 30), 60, 40, fill=False,
-                                                edgecolor='gray', linestyle='--'))
-            self.ax.add_patch(patches.Circle((50, 50), 6, fill=False, edgecolor='gray',
-                                             linestyle='--'))
-            self.ax.text(50, 18, "User-Defined Crack at Hole/Notch\n(fct vs crk/w table)",
-                         ha='center', fontsize=9, fontstyle='italic')
+        elif ntyp == -99:  # Countersunk-hole corner crack (example for user β table)
+            self._draw_plate()
+            cs_r   = 22                              # countersink opening radius (plan)
+            bore_r = self._hole_px(default=11)       # shank bore radius
+            a_px   = max(4, min(12, bore_r * 0.55))  # crack length
+            # Countersink opening (dashed — surface feature only)
+            self.ax.add_patch(patches.Circle((50, 50), cs_r, fill=False,
+                                             edgecolor='#555', linestyle='--', lw=1.2))
+            # Shank bore
+            self.ax.add_patch(patches.Circle((50, 50), bore_r, fill=False,
+                                             edgecolor='black', lw=2))
+            # Corner crack at taper/shank interface (right-side, looking down)
+            cx = 50 + bore_r
+            self.ax.add_patch(patches.Arc((cx, 50), 2 * a_px, 2 * a_px,
+                                          theta1=0, theta2=90, color='red', lw=2))
+            self.ax.plot([cx, cx + a_px], [50, 50], 'r-', lw=1.5)
+            self.ax.plot([cx, cx],         [50, 50 + a_px], 'r-', lw=1.5)
+            self._draw_tension_arrows()
+            self._add_label(50, 50 - cs_r - 5, "Countersink", color='#555')
+            self._add_label(50, 50 + bore_r + 5, "Bore",       color='#333')
+            self._add_label(cx + a_px + 4, 50 + a_px / 2, "c", color='red')
+            self.ax.text(50, 3, "Example: countersunk hole  (NTYP -99 → user β table)",
+                         ha='center', va='bottom', fontsize=5.5,
+                         color='dimgray', fontstyle='italic')
 
         else:
             self.ax.text(50, 50, f"Schematic N/A\n(Type {ntyp})", ha='center', fontsize=10)
@@ -697,9 +714,50 @@ class GeometryCanvas(tk.Frame):
             self._cs_ann_B(ax)
             self._cs_label(ax, 62, 50, "a", color='red')
 
-        elif ntyp == -99:
-            ax.text(50, 50, "User-Defined\n(no section)", ha='center', va='center',
-                    fontsize=9, fontstyle='italic', color='#888')
+        elif ntyp == -99:  # Countersunk hole — taper/shank interface corner crack
+            # Geometry constants (section coordinates: plate x 15–85, y 10–90)
+            bore_x1,  bore_x2  = 38, 62   # shank bore walls
+            cs_x1,    cs_x2    = 26, 74   # countersink opening at top face
+            iface_y            = 62        # taper/shank interface depth
+
+            # Plate outline
+            self._cs_rect(ax)
+
+            # Fill bore + countersink cavity
+            cavity = [[cs_x1, 90], [cs_x2, 90],
+                      [bore_x2, iface_y], [bore_x2, 10],
+                      [bore_x1, 10], [bore_x1, iface_y]]
+            ax.add_patch(patches.Polygon(cavity, fc='#cdd8ea', ec='none'))
+
+            # Bore walls and taper faces
+            ax.plot([bore_x1, bore_x1], [10, iface_y],   'k-', lw=1.5)
+            ax.plot([bore_x2, bore_x2], [10, iface_y],   'k-', lw=1.5)
+            ax.plot([cs_x1,   bore_x1], [90, iface_y],   'k-', lw=1.5)
+            ax.plot([cs_x2,   bore_x2], [90, iface_y],   'k-', lw=1.5)
+
+            # Interface datum line (dashed)
+            ax.plot([bore_x1, bore_x2], [iface_y, iface_y], 'k--', lw=0.8, alpha=0.5)
+
+            # Corner crack at right taper/shank interface: arc INTO the material
+            # Material is right of bore_x2 and below iface_y → angles 270°–360°
+            r_c = 10
+            ax.add_patch(patches.Arc((bore_x2, iface_y), 2 * r_c, 2 * r_c,
+                                      theta1=270, theta2=360, color='red', lw=2))
+            ax.plot([bore_x2, bore_x2],          [iface_y - r_c, iface_y], 'r-', lw=1.5)
+            ax.plot([bore_x2, bore_x2 + r_c],    [iface_y, iface_y],       'r-', lw=1.5)
+
+            # Taper angle annotation
+            ax.annotate('~82°', xy=(bore_x1 + 2, iface_y + 2),
+                        xytext=(20, iface_y + 10), fontsize=6, color='#555',
+                        arrowprops=dict(arrowstyle='->', color='#888', lw=0.8))
+
+            self._cs_ann_B(ax)
+            self._cs_label(ax, 50, 36,              "bore",   color='#446', fontsize=7)
+            self._cs_label(ax, 50, 78,              "c/sink", color='#446', fontsize=7)
+            self._cs_label(ax, bore_x2 + r_c + 5, iface_y - 5, "c", color='red')
+            ax.text(50, 2, "β from fct table  (ref. NASA TM-107604)",
+                    ha='center', va='bottom', fontsize=5.5,
+                    color='dimgray', fontstyle='italic')
 
         else:
             ax.text(50, 50, "Section N/A", ha='center', va='center',

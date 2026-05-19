@@ -146,7 +146,11 @@ NTYP_DATA = {
     -13: {'name': 'Lap-Splice Joint — Corner Cracks',                  'image': 'lap_splice_corner',    'special': ['RIVETS', 'RLF1', 'RLF2', 'NODKL', 'GAMMA', 'DELTA']},
     -14: {'name': 'Surface Crack at Edge Notch Bend',                  'image': 'notch_bend_surface',   'special': []},
     -15: {'name': 'Through Crack at Edge Notch Bend',                  'image': 'notch_bend_through',   'special': []},
-    -99: {'name': 'User-Defined Crack at Hole/Notch (fct vs crk/w)',   'image': 'user_geom_hole',       'special': []},
+    -99: {'name': 'User-Defined Crack at Hole/Notch (fct vs crk/w)',   'image': 'user_geom_hole',       'special': [],
+          'hint': ('Enter β corrections as a tabulated fct vs crk/w table.\n'
+                   'Common use: corner crack at a countersunk-hole taper/shank interface.\n'
+                   'Reference β tables: Shivakumar & Newman, NASA TM-107604 (1992).\n'
+                   'Typical countersink angles: 82° (AN) or 100° (MS).')},
 }
 
 

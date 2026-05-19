@@ -391,9 +391,18 @@ class FastranGui(tk.Tk):
             for w in self.special_frame.winfo_children(): w.destroy()
             
             # Fetch rules
-            specials = config.NTYP_DATA.get(ntyp_id, {}).get('special', [])
+            ntyp_meta = config.NTYP_DATA.get(ntyp_id, {})
+            specials   = ntyp_meta.get('special', [])
+            hint       = ntyp_meta.get('hint')
             if not specials:
-                ttk.Label(self.special_frame, text="No special inputs required for this geometry.", font=('Segoe UI', 8, 'italic')).pack()
+                if hint:
+                    ttk.Label(self.special_frame, text=hint,
+                              font=('Segoe UI', 8, 'italic'), foreground='#005580',
+                              wraplength=280, justify='left').pack(anchor='w', pady=2)
+                else:
+                    ttk.Label(self.special_frame,
+                              text="No special inputs required for this geometry.",
+                              font=('Segoe UI', 8, 'italic')).pack()
             else:
                 for req in specials:
                     # Create var if missing
@@ -402,6 +411,10 @@ class FastranGui(tk.Tk):
                     f.pack(fill='x', pady=2)
                     ttk.Label(f, text=f"{req}:").pack(side='left')
                     ttk.Entry(f, textvariable=self.vars[req]).pack(side='right', expand=True, fill='x')
+                if hint:
+                    ttk.Label(self.special_frame, text=hint,
+                              font=('Segoe UI', 8, 'italic'), foreground='#005580',
+                              wraplength=280, justify='left').pack(anchor='w', pady=(6, 2))
         except: pass
 
     # ------------------------------------------------------------------

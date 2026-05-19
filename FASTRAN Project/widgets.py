@@ -365,7 +365,7 @@ class GeometryCanvas(tk.Frame):
             self.ax.arrow(50, 85, 0, -10, head_width=3, head_length=3, fc='blue', ec='blue')
             self._add_label(56, 48, "c")
 
-        elif ntyp == -99:  # Countersunk-hole corner crack (example for user β table)
+        elif ntyp in (-16, -99):  # Countersunk-hole corner crack (or user β table)
             self._draw_plate()
             cs_r   = 22                              # countersink opening radius (plan)
             bore_r = self._hole_px(default=11)       # shank bore radius
@@ -386,8 +386,10 @@ class GeometryCanvas(tk.Frame):
             self._add_label(50, 50 - cs_r - 5, "Countersink", color='#555')
             self._add_label(50, 50 + bore_r + 5, "Bore",       color='#333')
             self._add_label(cx + a_px + 4, 50 + a_px / 2, "c", color='red')
-            self.ax.text(50, 3, "Example: countersunk hole  (NTYP -99 → user β table)",
-                         ha='center', va='bottom', fontsize=5.5,
+            _plan_note = ("Countersunk Hole — Corner Crack at Taper/Shank  (NTYP -16)"
+                          if ntyp == -16 else
+                          "Example: countersunk hole  (NTYP -99 → user β table)")
+            self.ax.text(50, 3, _plan_note, ha='center', va='bottom', fontsize=5.5,
                          color='dimgray', fontstyle='italic')
 
         else:
@@ -714,7 +716,7 @@ class GeometryCanvas(tk.Frame):
             self._cs_ann_B(ax)
             self._cs_label(ax, 62, 50, "a", color='red')
 
-        elif ntyp == -99:  # Countersunk hole — taper/shank interface corner crack
+        elif ntyp in (-16, -99):  # Countersunk hole — taper/shank interface corner crack
             # Geometry constants (section coordinates: plate x 15–85, y 10–90)
             bore_x1,  bore_x2  = 38, 62   # shank bore walls
             cs_x1,    cs_x2    = 26, 74   # countersink opening at top face
@@ -755,8 +757,10 @@ class GeometryCanvas(tk.Frame):
             self._cs_label(ax, 50, 36,              "bore",   color='#446', fontsize=7)
             self._cs_label(ax, 50, 78,              "c/sink", color='#446', fontsize=7)
             self._cs_label(ax, bore_x2 + r_c + 5, iface_y - 5, "c", color='red')
-            ax.text(50, 2, "β from fct table  (ref. NASA TM-107604)",
-                    ha='center', va='bottom', fontsize=5.5,
+            _sec_note = ("NTYP -16 → writes -99  |  β from fct table  (NASA TM-107604)"
+                         if ntyp == -16 else
+                         "β from fct table  (ref. NASA TM-107604)")
+            ax.text(50, 2, _sec_note, ha='center', va='bottom', fontsize=5.5,
                     color='dimgray', fontstyle='italic')
 
         else:

@@ -90,6 +90,10 @@ class FastranGui(tk.Tk):
                 self.vars[f"{key}_{eq_idx}"] = tk.StringVar(
                     value=config.DEFAULT_VALUES.get(key, '0'))
 
+        # β boundary-correction table for NTYP 99 / -99 / -16 (Section 12).
+        # JSON-encoded [[c/W, Fc], ...] list; zero-length means KTAB=0.
+        self.vars['KTAB_TABLE'] = tk.StringVar(value='[]')
+
         # Per-equation crack-growth tables (Section 7b). Each holds a JSON-encoded
         # list of [dk, rate] pairs so the existing JSON save/load state code
         # round-trips them with no special handling.
@@ -405,16 +409,32 @@ class FastranGui(tk.Tk):
                               font=('Segoe UI', 8, 'italic')).pack()
             else:
                 for req in specials:
-                    # Create var if missing
-                    if req not in self.vars: self.vars[req] = tk.StringVar(value="0.0")
+                    if req not in self.vars:
+                        self.vars[req] = tk.StringVar(
+                            value=config.DEFAULT_VALUES.get(req, '0.0'))
                     f = ttk.Frame(self.special_frame)
                     f.pack(fill='x', pady=2)
                     ttk.Label(f, text=f"{req}:").pack(side='left')
-                    ttk.Entry(f, textvariable=self.vars[req]).pack(side='right', expand=True, fill='x')
+                    tip = config.TOOLTIPS.get(req)
+                    if req == 'CS_ANGLE':
+                        cb = ttk.Combobox(f, textvariable=self.vars[req],
+                                          values=['82', '100'], width=10, state='normal')
+                        cb.pack(side='right')
+                        if tip: widgets.ToolTip(cb, tip)
+                    else:
+                        e = ttk.Entry(f, textvariable=self.vars[req])
+                        e.pack(side='right', expand=True, fill='x')
+                        if tip: widgets.ToolTip(e, tip)
                 if hint:
                     ttk.Label(self.special_frame, text=hint,
                               font=('Segoe UI', 8, 'italic'), foreground='#005580',
                               wraplength=280, justify='left').pack(anchor='w', pady=(6, 2))
+
+            # β table button for NTYP -16 / -99 / 99
+            if ntyp_id in (-16, -99, 99):
+                ttk.Button(self.special_frame, text="Edit β Table…",
+                           command=self._launch_beta_table_editor).pack(
+                               anchor='w', pady=(6, 2))
         except: pass
 
     # ------------------------------------------------------------------
@@ -1303,6 +1323,20 @@ class FastranGui(tk.Tk):
 
     def _cgr_table_var(self, eq_idx):
         return self.vars['CGR_TABLE'] if eq_idx == 1 else self.vars[f'CGR_TABLE_{eq_idx}']
+
+    def _launch_beta_table_editor(self):
+        """Open the β correction table (c/W vs Fc) editor for NTYP 99/-99/-16."""
+        try:
+            initial = json.loads(self.vars['KTAB_TABLE'].get() or '[]')
+        except (json.JSONDecodeError, KeyError):
+            initial = []
+        ntyp_id = int(self.vars['NTYP'].get().split(':')[0])
+
+        def _on_save(rows):
+            self.vars['KTAB_TABLE'].set(json.dumps(rows))
+            self.vars['KTAB'].set(str(len(rows)))
+
+        editors.BetaTableDialog(self, _on_save, initial, ntyp=ntyp_id)
 
     def _launch_cgr_table_editor(self, eq_idx):
         var = self._cgr_table_var(eq_idx)

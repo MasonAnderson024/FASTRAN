@@ -56,6 +56,11 @@ DEFAULT_VALUES = {
 
     # Tabular Crack Growth (Section 7a)
     'NTAB': '0', 'NDKTH': '0', 'KTAB': '0',
+    'KTAB_TABLE': '[]',        # JSON [[c/W, Fc], ...] for NTYP 99/-99/-16
+
+    # Countersunk-hole geometry (NTYP -16, writes as -99)
+    'CS_ANGLE':       '82',    # countersink included angle in degrees
+    'CS_DEPTH_RATIO': '0.5',   # t_cs / B (countersink depth / plate thickness)
 
     # Variable Constraint Transition (Section 8 — NALP=1 only)
     'RATE1': '1.0E-7', 'ALP1': '2.0', 'BETAT1': '1.0', 'BETAW1': '1.0',
@@ -146,7 +151,15 @@ NTYP_DATA = {
     -13: {'name': 'Lap-Splice Joint — Corner Cracks',                  'image': 'lap_splice_corner',    'special': ['RIVETS', 'RLF1', 'RLF2', 'NODKL', 'GAMMA', 'DELTA']},
     -14: {'name': 'Surface Crack at Edge Notch Bend',                  'image': 'notch_bend_surface',   'special': []},
     -15: {'name': 'Through Crack at Edge Notch Bend',                  'image': 'notch_bend_through',   'special': []},
-    -99: {'name': 'User-Defined Crack at Hole/Notch (fct vs crk/w)',   'image': 'user_geom_hole',       'special': []},
+    -16: {'name': 'Countersunk Hole — Corner Crack at Taper/Shank',    'image': 'cs_corner',            'special': ['CS_ANGLE', 'CS_DEPTH_RATIO'],
+          'hint': ('Writes NTYP -99 to FASTRAN file. Edit the β table with the\n'
+                   '"Edit β Table" button. Reference: Shivakumar & Newman,\n'
+                   'NASA TM-107604 (1992).')},
+    -99: {'name': 'User-Defined Crack at Hole/Notch (fct vs crk/w)',   'image': 'user_geom_hole',       'special': [],
+          'hint': ('Enter β corrections as a tabulated fct vs crk/w table.\n'
+                   'Common use: corner crack at a countersunk-hole taper/shank interface.\n'
+                   'Reference β tables: Shivakumar & Newman, NASA TM-107604 (1992).\n'
+                   'Typical countersink angles: 82° (AN) or 100° (MS).')},
 }
 
 
@@ -391,4 +404,8 @@ TOOLTIPS = {
     'SPECTRA': 'Filename of the spectrum loading file (for NFOPT=5,8,9,10; use dummy file for others).',
     'LUNIT':   '0=Keep units. 1=English→SI. 2=SI→English.',
     'IUNIT':   '0=SI (MPa, m). 1=English (ksi, inches).',
+    'KTAB':    'Number of rows in the β table (NTYP 99/-99/-16). Set automatically by the table editor.',
+    'KTAB_TABLE': 'β correction table [[c/W, Fc], ...] in ascending c/W order (NTYP 99/-99/-16).',
+    'CS_ANGLE':       'Countersink included angle (degrees). 82° = AN/MS82°, 100° = MS100°.',
+    'CS_DEPTH_RATIO': 'Ratio of countersink depth to plate thickness (t_cs/B). Typical range: 0.3–0.7.',
 }

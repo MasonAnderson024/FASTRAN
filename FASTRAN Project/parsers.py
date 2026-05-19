@@ -52,6 +52,10 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
         irate = int(get_val('IRATE'))
         ltyp  = int_prefix(get_val('LTYP'))
 
+        # NTYP -16 is a GUI-only alias for the countersunk-hole corner crack.
+        # FASTRAN itself has no dedicated code; it runs as NTYP -99.
+        file_ntyp = -99 if ntyp == -16 else ntyp
+
         lines = []
 
         # ── Section 1: Problem Title ──────────────────────────────────────────
@@ -133,7 +137,7 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
 
         # ── Section 10: NTYP LTYP LFAST NS NFOPT INVERT KCONST NTCMAX ────────
         lines.append(row(
-            ntyp, ltyp, int_prefix(get_val('LFAST')), get_val('NS'),
+            file_ntyp, ltyp, int_prefix(get_val('LFAST')), get_val('NS'),
             nfopt, get_val('INVERT'), int_prefix(get_val('KCONST')), get_val('NTCMAX')
         ))
 
@@ -146,8 +150,8 @@ def generate_fastran_input(filepath, vars_dict, is_dict=False):
             get_val('RAD'), get_val('RADF')
         ))
 
-        # ── Section 12: KTAB + table (NTYP=99 or -99 only) ───────────────────
-        if abs(ntyp) == 99:
+        # ── Section 12: KTAB + table (NTYP=99, -99, or -16 alias) ───────────
+        if abs(file_ntyp) == 99:
             ktab = int(get_val('KTAB'))
             lines.append(str(ktab))
             if ktab > 0:
@@ -236,7 +240,8 @@ def _write_loading_section(lines, nfopt, get_val, smax, smin):
         # Lines 3+: block definitions
         # For NFOPT=1, full block data comes from BlockEditorWindow (not wired yet).
         # For NFOPT=0, generate a single block with one constant-amplitude level.
-        block_data = get_val('BLOCK_DATA') if 'BLOCK_DATA' in vars_dict else None
+        _bd = get_val('BLOCK_DATA')
+        block_data = _bd if _bd and _bd not in ('', '0.0') else None
         if block_data is None:
             # Default: one block, one stress level
             lines.append(row(1, 1, 1))              # NBLK=1  NSL=1  NSQ=1

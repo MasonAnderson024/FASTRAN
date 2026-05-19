@@ -1991,3 +1991,127 @@ class CrackGrowthTableDialog(tk.Toplevel):
         if self.callback:
             self.callback(self.rows)
         self.destroy()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+class BetaTableDialog(tk.Toplevel):
+    """
+    β boundary-correction table (c/W vs Fc) editor for NTYP 99, -99, and -16.
+
+    Rows are [[c/W, Fc], ...] in ascending c/W order.  FASTRAN linearly
+    interpolates between rows at runtime.  The dialog is intentionally
+    parallel to CrackGrowthTableDialog so users recognise the pattern.
+    """
+
+    def __init__(self, parent, callback, initial_data, ntyp=-16):
+        super().__init__(parent)
+        self.title("β Correction Table  (c/W vs Fc)")
+        self.geometry("500x500")
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+
+        self.callback = callback
+        self.rows = copy.deepcopy(initial_data) if initial_data else []
+        self.row_widgets = []
+
+        if abs(ntyp) == 16:
+            hint = ("Enter c/W (crack half-length ÷ half-width) and Fc (β correction "
+                    "factor) pairs in strictly ascending c/W order.\n\n"
+                    "For a countersunk-hole corner crack: tabulate Fcs values from "
+                    "Shivakumar & Newman, NASA TM-107604 (1992) for your countersink "
+                    "angle (CS_ANGLE) and depth ratio (CS_DEPTH_RATIO = t_cs/B).")
+        else:
+            hint = ("Enter c/W (crack half-length ÷ half-width) and Fc (boundary "
+                    "correction factor) pairs in strictly ascending c/W order.\n"
+                    "FASTRAN interpolates linearly between rows.")
+
+        ttk.Label(self, padding=(10, 8), justify='left', wraplength=460,
+                  foreground='#1a5fa8', font=('Segoe UI', 9, 'italic'),
+                  text=hint).pack(fill='x')
+
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill='both', expand=True)
+
+        for col, hdr in enumerate(["c/W", "Fc", "Actions"]):
+            ttk.Label(body, text=hdr, font="-weight bold").grid(
+                row=0, column=col, padx=5, pady=5,
+                columnspan=(3 if hdr == "Actions" else 1))
+
+        self.table_frame = ttk.Frame(body)
+        self.table_frame.grid(row=1, column=0, columnspan=5, sticky='nsew')
+        body.rowconfigure(1, weight=1)
+
+        ctrl = ttk.Frame(self, padding=(10, 0))
+        ctrl.pack(fill='x')
+        ttk.Button(ctrl, text="Add Row", command=self._add_row).pack(side='left', padx=2)
+
+        bottom = ttk.Frame(self, padding=10)
+        bottom.pack(fill='x', side='bottom')
+        ttk.Button(bottom, text="Save & Close", command=self._save_and_close).pack(side='right', padx=2)
+        ttk.Button(bottom, text="Cancel",       command=self.destroy).pack(side='right')
+
+        self._redraw()
+
+    # ── table rendering ───────────────────────────────────────────────────────
+
+    def _redraw(self):
+        for w in self.table_frame.winfo_children():
+            w.destroy()
+        self.row_widgets.clear()
+        for i, (cw, fc) in enumerate(self.rows):
+            cw_e = ttk.Entry(self.table_frame, width=16)
+            cw_e.insert(0, str(cw))
+            cw_e.grid(row=i, column=0, padx=5, pady=2)
+            fc_e = ttk.Entry(self.table_frame, width=16)
+            fc_e.insert(0, str(fc))
+            fc_e.grid(row=i, column=1, padx=5, pady=2)
+            up = ttk.Button(self.table_frame, text="↑", width=3,
+                            command=lambda i=i: self._move(i, -1))
+            up.grid(row=i, column=2, padx=(10, 2))
+            dn = ttk.Button(self.table_frame, text="↓", width=3,
+                            command=lambda i=i: self._move(i, 1))
+            dn.grid(row=i, column=3, padx=2)
+            de = ttk.Button(self.table_frame, text="Delete", width=8,
+                            command=lambda i=i: self._delete(i))
+            de.grid(row=i, column=4, padx=2)
+            if i == 0:
+                up.config(state="disabled")
+            if i == len(self.rows) - 1:
+                dn.config(state="disabled")
+            self.row_widgets.append((cw_e, fc_e))
+
+    def _sync_from_widgets(self):
+        for i, (cw_e, fc_e) in enumerate(self.row_widgets):
+            if i < len(self.rows):
+                self.rows[i] = [cw_e.get(), fc_e.get()]
+
+    def _add_row(self):
+        self._sync_from_widgets()
+        self.rows.append(['0.0', '1.0'])
+        self._redraw()
+
+    def _delete(self, idx):
+        self._sync_from_widgets()
+        if 0 <= idx < len(self.rows):
+            self.rows.pop(idx)
+            self._redraw()
+
+    def _move(self, idx, delta):
+        self._sync_from_widgets()
+        new_idx = idx + delta
+        if 0 <= new_idx < len(self.rows):
+            self.rows[idx], self.rows[new_idx] = self.rows[new_idx], self.rows[idx]
+            self._redraw()
+
+    def _save_and_close(self):
+        self._sync_from_widgets()
+        valid = []
+        for cw, fc in self.rows:
+            try:
+                valid.append([float(cw), float(fc)])
+            except (ValueError, TypeError):
+                pass
+        if self.callback:
+            self.callback(valid)
+        self.destroy()
